@@ -8,7 +8,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 public class SlideFileService {
@@ -19,10 +18,15 @@ public class SlideFileService {
     @Value("${presentation.merged.file.path:output/slides/final_presentation.md}")
     private String mergedFilePath;
 
-    public void savePage(int pageNumber, String content) throws IOException {
+    public void savePage(int pageNumber, String templateName, String contentMarkdown) throws IOException {
         Path path = Paths.get(outputDir, String.format("page_%d.md", pageNumber));
         Files.createDirectories(path.getParent());
-        Files.writeString(path, content);
+        
+        // Deterministically wrap the AI content with template declaration
+        String wrappedContent = String.format("<!-- slide template=\"[[%s]]\" -->\n\n%s", 
+                templateName.trim(), contentMarkdown.trim());
+        
+        Files.writeString(path, wrappedContent);
     }
 
     public String readPage(int pageNumber) throws IOException {
@@ -41,28 +45,30 @@ public class SlideFileService {
         Path dir = Paths.get(outputDir);
         if (!Files.exists(dir)) return "";
 
-        // Read settings first
         StringBuilder merged = new StringBuilder();
+        
+        // 1. Add settings at the top
         Path settingsPath = dir.resolve("settings.md");
         if (Files.exists(settingsPath)) {
-            merged.append(Files.readString(settingsPath)).append("\n---\n");
+            merged.append(Files.readString(settingsPath).trim()).append("\n\n---\n\n");
         }
 
-        // Read all page_n.md files sorted by number
+        // 2. Add all pages with exactly one '---' between them
         List<Path> pages = Files.list(dir)
                 .filter(p -> p.getFileName().toString().startsWith("page_") && p.getFileName().toString().endsWith(".md"))
                 .sorted(Comparator.comparingInt(this::extractPageNumber))
                 .toList();
 
         for (int i = 0; i < pages.size(); i++) {
-            merged.append(Files.readString(pages.get(i)));
+            String content = Files.readString(pages.get(i)).trim();
+            merged.append(content);
             if (i < pages.size() - 1) {
-                merged.append("\n---\n"); // Advanced Slides separator
+                merged.append("\n\n---\n\n"); // Deterministic separator
             }
         }
 
         Path finalPath = Paths.get(mergedFilePath);
-        Files.createDirectories(finalPath.getParent()); // Ensure Obsidian folder exists
+        Files.createDirectories(finalPath.getParent());
         Files.writeString(finalPath, merged.toString());
         return finalPath.toString();
     }

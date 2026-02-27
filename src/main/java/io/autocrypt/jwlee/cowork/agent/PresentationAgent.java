@@ -12,7 +12,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-@Agent(description = "Advanced Slides presentation creator that can handle multi-page structures with context")
+@Agent(description = "Advanced Slides professional creator. Uses deterministic wrapping for templates.")
 public class PresentationAgent {
 
     private final ToolishRag localKnowledgeTool;
@@ -23,17 +23,14 @@ public class PresentationAgent {
         this.fileService = fileService;
     }
 
-    public record SlidePage(int pageNumber, String markdown) {}
+    public record SlidePage(int pageNumber, String templateName, String contentMarkdown) {}
     public record PresentationSettings(String content) {}
     public record PresentationPlan(String title, List<String> pageTopics) {}
     public record FinalPresentation(String filePath) {}
 
-    /**
-     * Step 1: Initialize presentation settings (Fixed template).
-     */
     @Action
     public PresentationSettings initializeSettings(UserInput input) throws IOException {
-        String fixedSettings = """
+        String goldenSettings = """
                 ---
                 theme: consult
                 height: 540
@@ -49,38 +46,28 @@ public class PresentationAgent {
                 ---
                 <style>
                 .horizontal_dotted_line{ border-bottom: 2px dotted gray; }
+                .small-indent p { margin: 0; }
+                .small-indent ul { padding-left: 1em; line-height: 1.3; }
+                .small-indent ul > li { padding: 0; }
+                ul p { margin-top: 0; }
                 .force-center { display: flex !important; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; text-align: center; }
                 </style>
                 """;
-        fileService.saveSettings(fixedSettings);
-        return new PresentationSettings(fixedSettings);
+        fileService.saveSettings(goldenSettings);
+        return new PresentationSettings(goldenSettings);
     }
 
-    /**
-     * Step 2: Create a high-level plan for the entire presentation.
-     * This acts as the 'Map' to keep context consistent across all slides.
-     */
     @Action
     public PresentationPlan planPresentation(UserInput input, PresentationSettings settings, Ai ai) {
         return ai.withAutoLlm()
                 .withReference(localKnowledgeTool)
                 .withToolGroup(CoreToolGroups.WEB)
-                .createObject(String.format("""
-                        Plan a comprehensive presentation based on: %s
-                        Reference local knowledge and web search to create a logical flow.
-                        Define a title and a list of specific topics for each slide page.
-                        If the user requested a specific number of pages, respect that.
-                        """, input.getContent()), PresentationPlan.class);
+                .createObject(String.format("Plan a presentation structure for: %s. Output a list of topics for each slide.", input.getContent()), PresentationPlan.class);
     }
 
-    /**
-     * Step 3: Generate all slides based on the plan.
-     * By receiving 'PresentationPlan', the LLM knows the full context of the presentation.
-     */
     @Action
-    public List<SlidePage> generateAllSlides(PresentationPlan plan, Ai ai) throws IOException {
+    public List<SlidePage> generateAllSlides(PresentationPlan plan, PresentationSettings settings, Ai ai) throws IOException {
         List<SlidePage> allPages = new ArrayList<>();
-        
         for (int i = 0; i < plan.pageTopics().size(); i++) {
             int pageNum = i + 1;
             String topic = plan.pageTopics().get(i);
@@ -89,54 +76,54 @@ public class PresentationAgent {
                     .withReference(localKnowledgeTool)
                     .creating(SlidePage.class)
                     .fromPrompt(String.format("""
-                            You are crafting page %d of a %d-page presentation titled '%s'.
-                            The full outline is: %s
+                            You are crafting the CONTENT for page %d of '%s'.
+                            TOPIC: %s
                             
-                            CURRENT TOPIC FOR THIS PAGE: %s
+                            # YOUR TASKS:
+                            1. Select the BEST template name from 'catalog.md' (e.g., 'tpl-con-3-2').
+                            2. Write ONLY the inner container markdown (::: title, ::: left, ::: right, ::: block).
                             
-                            # Instructions:
-                            1. CONSULT 'catalog.md' to pick the best template for this topic.
-                            2. Use Advanced Slides containers (::: title, ::: left, etc.).
-                            3. Ensure consistency with the overall presentation context.
-                            """, pageNum, plan.pageTopics().size(), plan.title(), plan.pageTopics(), topic));
+                            # CRITICAL RESTRICTIONS:
+                            - DO NOT write the '<!-- slide template=... -->' line.
+                            - DO NOT write '---' separators.
+                            - DO NOT write YAML headers.
+                            - JUST write the containers and their content.
+                            """, pageNum, plan.title(), topic));
             
-            fileService.savePage(page.pageNumber(), page.markdown());
+            fileService.savePage(page.pageNumber(), page.templateName(), page.contentMarkdown());
             allPages.add(page);
         }
         return allPages;
     }
 
-    /**
-     * Step 4: Finalize and merge.
-     */
-    @AchievesGoal(description = "The multi-page presentation has been merged and saved")
+    @AchievesGoal(description = "Merged professional presentation")
     @Action
     public FinalPresentation finishPresentation(List<SlidePage> allSlides) throws IOException {
-        String path = fileService.mergeAll();
-        return new FinalPresentation(path);
+        return new FinalPresentation(fileService.mergeAll());
     }
 
-    /**
-     * Separate Action: 정밀 수정 (기존 구조 유지)
-     */
     @Action
     public SlidePage modifyExistingSlide(UserInput input, PresentationSettings settings, Ai ai) throws IOException {
-        Integer targetPage = ai.withAutoLlm()
-                .creating(Integer.class)
-                .fromPrompt("Extract only the page number as an integer from this request: " + input.getContent());
-        
-        String currentContent = fileService.readPage(targetPage);
+        Integer targetPage = ai.withAutoLlm().creating(Integer.class).fromPrompt("Which page number to modify? " + input.getContent());
+        String currentRawFile = fileService.readPage(targetPage);
         
         SlidePage updated = ai.withAutoLlm()
                 .withReference(localKnowledgeTool)
                 .creating(SlidePage.class)
                 .fromPrompt(String.format("""
-                        Modify the following presentation slide based on this request: %s
-                        Current content of page %d:
+                        Modify the CONTENT of Page %d.
+                        CURRENT FULL CONTENT (including auto-generated parts):
                         %s
-                        """, input.getContent(), targetPage, currentContent));
+                        
+                        REQUEST: %s
+                        
+                        # RULES:
+                        1. Return the correct 'templateName'.
+                        2. Return ONLY the inner content in 'contentMarkdown'.
+                        3. STRIP AWAY any '---' or '<!-- slide ... -->' from your output.
+                        """, targetPage, currentRawFile, input.getContent()));
         
-        fileService.savePage(updated.pageNumber(), updated.markdown());
+        fileService.savePage(updated.pageNumber(), updated.templateName(), updated.contentMarkdown());
         return updated;
     }
 }
