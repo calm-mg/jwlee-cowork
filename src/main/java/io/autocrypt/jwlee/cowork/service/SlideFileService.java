@@ -45,9 +45,7 @@ public class SlideFileService {
         StringBuilder merged = new StringBuilder();
         Path settingsPath = dir.resolve("settings.md");
         if (Files.exists(settingsPath)) {
-            merged.append(Files.readString(settingsPath)).append("
----
-");
+            merged.append(Files.readString(settingsPath)).append("\n---\n");
         }
 
         // Read all page_n.md files sorted by number
@@ -59,9 +57,7 @@ public class SlideFileService {
         for (int i = 0; i < pages.size(); i++) {
             merged.append(Files.readString(pages.get(i)));
             if (i < pages.size() - 1) {
-                merged.append("
----
-"); // Advanced Slides separator
+                merged.append("\n---\n"); // Advanced Slides separator
             }
         }
 
