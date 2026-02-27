@@ -84,9 +84,10 @@
                 </property>
             </activation>
             <dependencies>
+                <!-- Use only the OpenAI-compatible Gemini starter as requested -->
                 <dependency>
                     <groupId>com.embabel.agent</groupId>
-                    <artifactId>embabel-agent-starter-google-genai</artifactId>
+                    <artifactId>embabel-agent-starter-gemini</artifactId>
                     <version>${embabel-agent.version}</version>
                 </dependency>
             </dependencies>
