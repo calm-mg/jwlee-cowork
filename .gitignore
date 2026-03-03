@@ -13,3 +13,4 @@ embabel-agent-api/src/main/resources/mcp/**
 **/*.log
 knowledge/.DS_Store
 output/
+**/.DS_Store

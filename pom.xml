@@ -92,7 +92,9 @@
         <profile>
             <id>groq-models</id>
             <activation>
-                <activeByDefault>env.GROQ_API_KEY</activeByDefault>
+                <property>
+                    <name>env.GROQ_API_KEY</name>
+                </property>
             </activation>
             <dependencies>
                 <dependency>
