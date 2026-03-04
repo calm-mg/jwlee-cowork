@@ -32,4 +32,10 @@ if [ ! -f "$POM_FILE" ]; then
 fi
 
 # Run Maven Spring Boot application
-"$SCRIPT_DIR/../../mvnw" -U -f "$POM_FILE" -Dmaven.test.skip=true spring-boot:run
+if [ $# -gt 0 ]; then
+    "$SCRIPT_DIR/../../mvnw" -U -f "$POM_FILE" -Dmaven.test.skip=true spring-boot:run \
+        -Dspring-boot.run.arguments="$*" \
+        -Dspring-boot.run.jvmArguments="-Dspring.shell.interactive.enabled=false"
+else
+    "$SCRIPT_DIR/../../mvnw" -U -f "$POM_FILE" -Dmaven.test.skip=true spring-boot:run
+fi

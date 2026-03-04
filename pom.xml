@@ -76,10 +76,10 @@
     </build>
 
     <profiles>
-        <profile>
-            <id>ollama-models</id>
+        <!--<profile>
+            <id>auto-ollama-models</id>
             <activation>
-                <activeByDefault>false</activeByDefault>
+                <activeByDefault>true</activeByDefault>
             </activation>
             <dependencies>
                 <dependency>
@@ -88,8 +88,8 @@
                     <version>${embabel-agent.version}</version>
                 </dependency>
             </dependencies>
-        </profile>
-        <profile>
+        </profile>-->
+        <!--<profile>
             <id>groq-models</id>
             <activation>
                 <property>
@@ -103,8 +103,9 @@
                     <version>${embabel-agent.version}</version>
                 </dependency>
             </dependencies>
-        </profile>
-        <!--<profile>
+        </profile>-->
+        <!--
+        <profile>
             <id>google-models</id>
             <activation>
                 <property>
@@ -118,7 +119,23 @@
                     <version>${embabel-agent.version}</version>
                 </dependency>
             </dependencies>
-        </profile>-->
+        </profile>
+        -->
+        <profile>
+            <id>google-genai-models</id>
+            <activation>
+                <property>
+                    <name>env.GEMINI_API_KEY</name>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.embabel.agent</groupId>
+                    <artifactId>embabel-agent-starter-google-genai</artifactId>
+                    <version>${embabel-agent.version}</version>
+                </dependency>
+            </dependencies>
+        </profile>
     </profiles>
 
     <repositories>

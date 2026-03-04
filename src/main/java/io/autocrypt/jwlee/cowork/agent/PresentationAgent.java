@@ -4,25 +4,41 @@ import com.embabel.agent.api.annotation.AchievesGoal;
 import com.embabel.agent.api.annotation.Action;
 import com.embabel.agent.api.annotation.Agent;
 import com.embabel.agent.api.common.Ai;
+import com.embabel.agent.api.common.ActionContext;
 import com.embabel.agent.core.CoreToolGroups;
 import com.embabel.agent.domain.io.UserInput;
 import com.embabel.agent.rag.tools.ToolishRag;
 import io.autocrypt.jwlee.cowork.service.SlideFileService;
+import com.embabel.agent.api.reference.LlmReference;
+import com.embabel.agent.prompt.persona.RoleGoalBackstory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 import jakarta.validation.constraints.Pattern;
 
+abstract class PresentationPersonas {
+    static final RoleGoalBackstory WRITER = new RoleGoalBackstory(
+            "Creative Storyteller",
+            "Write engaging and imaginative stories",
+            "Has a PhD in French literature; used to work in a circus");
+}
+
 @Agent(description = "Advanced Slides professional creator. Uses deterministic wrapping for templates.")
 public class PresentationAgent {
 
     private final ToolishRag localKnowledgeTool;
     private final SlideFileService fileService;
+    private final LlmReference presentationExpert;
 
-    public PresentationAgent(ToolishRag localKnowledgeTool, SlideFileService fileService) {
+    public PresentationAgent(
+            @Qualifier("directoryRagTool") ToolishRag localKnowledgeTool,
+            SlideFileService fileService,
+            LlmReference presentationExpert) {
         this.localKnowledgeTool = localKnowledgeTool;
         this.fileService = fileService;
+        this.presentationExpert = presentationExpert;
     }
 
     /**
@@ -113,7 +129,8 @@ public class PresentationAgent {
     @Action
     public PresentationPlan planPresentation(UserInput input, PresentationSettings settings, Ai ai) {
         return ai.withAutoLlm()
-                .withReference(localKnowledgeTool)
+                // .withPromptContributor(PresentationPersonas.WRITER)
+                // .withReference(localKnowledgeTool)
                 .createObject(String.format("""
                         Plan a professional presentation structure for: %s. 
                         
@@ -125,18 +142,17 @@ public class PresentationAgent {
                         """, input.getContent()), PresentationPlan.class);
     }
 
-    @Action
-    public List<SlidePage> generateAllSlides(PresentationPlan plan, PresentationSettings settings, Ai ai) throws IOException {
-        List<SlidePage> allPages = new ArrayList<>();
+    public record SlideList(List<SlidePage> slides) {}
 
+    @Action
+    public List<SlidePage> generateAllSlides(PresentationPlan plan, PresentationSettings settings, ActionContext context) throws IOException {
         // 1. Deterministic Title Page (Page 1)
         String today = java.time.LocalDate.now().toString();
         String titleMarkdown = String.format("## %s\n::: block\n#### %s / %s\n:::", plan.title(), plan.subtitle(), today);
         fileService.savePage(1, "tpl-con-title", titleMarkdown);
-        
-        // 2. Pre-fetch ALL Context (ONE RAG call instead of N calls)
-        // Dynamically search based on the plan topics, not a hardcoded document name.
-        String sharedContext = ai.withAutoLlm()
+
+        // 2. Pre-fetch ALL Context
+        String sharedContext = context.ai().withAutoLlm()
                 .withReference(localKnowledgeTool)
                 .generateText(String.format("""
                         Search the local knowledge base for information related to: '%s'.
@@ -145,83 +161,36 @@ public class PresentationAgent {
                         # INSTRUCTIONS:
                         - Summarize ONLY relevant facts found in the documents.
                         - If NO relevant documents are found at all, return exactly the word 'NONE'.
-                        - Be concise to save tokens.
                         """, plan.title(), String.join(", ", plan.pageTopics())));
 
-        boolean hasLocalContext = sharedContext != null && !sharedContext.trim().equalsIgnoreCase("NONE");
+        String contextSection = (sharedContext != null && !sharedContext.trim().equalsIgnoreCase("NONE")) ? 
+            String.format("# SHARED CONTEXT FROM DOCUMENTS:\n%s", sharedContext) : 
+            "# NOTE: No relevant local documents found.";
 
-        // Examples for validation and few-shot
-        SlidePage goodExample = new SlidePage(
-            2, 
-            "tpl-con-3-2", 
-            "## 주요 성과", 
-            """
-            - 처리 속도 30% 향상
-            - 오류율 5% 감소
-            """, 
-            "성능 비교 그래프 참고", 
-            null, 
-            "PoC Phase 1 보고서"
-        );
+        // 3. Batch Generate All Pages
+        SlideList result = context.ai()
+                .withAutoLlm()
+                .withReference(presentationExpert)
+                .createObject(String.format("""
+                        Generate a professional presentation about: '%s'.
+                        
+                        %s
+                        
+                        # TOPICS TO COVER (One slide per topic):
+                        %s
+                        
+                        # REQUIREMENTS:
+                        1. Generate exactly %d content slides.
+                        2. Start page numbers from 2.
+                        3. Use appropriate templateName (tpl-con-3-2, tpl-con-2-1, or tpl-con-block).
+                        4. All text MUST be in KOREAN.
+                        """, plan.title(), contextSection, String.join("\n- ", plan.pageTopics()), plan.pageTopics().size()), SlideList.class);
 
-        // 3. AI Generated Content Pages
-        for (int i = 0; i < plan.pageTopics().size(); i++) {
-            // Rate Limit Mitigation: Sleep between slide generations
-            try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-
-            int pageNum = i + 2; 
-            String topic = plan.pageTopics().get(i);
-            
-            String contextSection = hasLocalContext ? 
-                String.format("# SHARED CONTEXT FROM DOCUMENTS:\n%s", sharedContext) : 
-                "# NOTE: No relevant local documents found. Use your general knowledge.";
-
-            SlidePage page = ai.withAutoLlm()
-                    .creating(SlidePage.class)
-                    .withExample("Properly structured Korean slide", goodExample)
-                    .fromPrompt(String.format("""
-                            You are crafting Page %d for the presentation: '%s'.
-                            TOPIC: %s
-                            
-                            %s
-                            
-                            # TEMPLATE GUIDE & CONSTRAINTS:
-                            - tpl-con-default-box: 
-                                * Usage: Table of Contents (TOC), Objectives, or Core Goals.
-                                * Formatting: Use 'fullWidthContent' to list items. These will be wrapped in '::: block'.
-                            - tpl-con-default-slide: 
-                                * Usage: General content, lists, large diagrams, TABLES, or LARGE IMAGES.
-                                * Capacity: Max 10 lines of text.
-                                * Mermaid: FULLY SUPPORTED.
-                                * Tables: MARKDOWN TABLES ARE FULLY SUPPORTED for any structured data.
-                            - tpl-con-3-2: 
-                                * Usage: Comparison or description (Left) + summary (Right).
-                                * Capacity: Left (5-7 lines), Right (3-5 lines).
-                                * Mermaid: NOT RECOMMENDED.
-                                * Tip: You can put an image '![..](..)' on the LEFT and text on the RIGHT.
-                            - tpl-con-2-1-box: 
-                                * Usage: Detailed visual (Left) + Highlight box (Right).
-                                * Capacity: Left (Supports large diagrams, 10 lines, or FEATURED IMAGE), Right Box (3-4 punchy lines).
-                                * Mermaid: SUPPORTED on the LEFT side.
-                                * Tip: Perfect for a large visual on the left with a summary box on the right.
-                            
-                            # YOUR MISSION:
-                            1. Fill 'titleText' in KOREAN (starts with '## ').
-                            2. Select the BEST 'templateName' based on the guide above. For TOC or Objectives, ALWAYS use 'tpl-con-default-box'.
-                            3. Fill content fields in KOREAN. Use Mermaid or MARKDOWN TABLES for any structured or complex data.
-                            4. IMAGES: You can use standard Markdown syntax '![alt text](url)' to include relevant web images if it helps visualize the topic.
-                            5. CRITICAL: USE ACTUAL NEWLINES for lists and paragraphs. DO NOT use the '\\n' character string.
-                            5. If 'SHARED CONTEXT' is provided, prioritize those facts. Otherwise, use your internal knowledge about '%s'.
-                            6. Cite the source document filename in 'footerSource'.
-                            
-                            # FOOTER SOURCE:
-                            - Provide the origin document name in 'footerSource'. It will be wrapped in '::: source'.
-                            """, pageNum, plan.title(), topic, contextSection, topic));
-            
+        // 4. Save and return
+        for (SlidePage page : result.slides()) {
             fileService.savePage(page.pageNumber(), page.templateName(), page.toMarkdown());
-            allPages.add(page);
         }
-        return allPages;
+        return result.slides();
     }
 
     @AchievesGoal(description = "Merged professional presentation")
@@ -232,13 +201,13 @@ public class PresentationAgent {
 
     @Action
     public SlidePage modifyExistingSlide(UserInput input, PresentationSettings settings, Ai ai) throws IOException {
-        Integer targetPage = ai.withAutoLlm().creating(Integer.class).fromPrompt("Which page number to modify? " + input.getContent());
+        Integer targetPage = ai.withAutoLlm().createObject("Which page number to modify? " + input.getContent(), Integer.class);
         String currentRawFile = fileService.readPage(targetPage);
         
         SlidePage updated = ai.withAutoLlm()
-                .withReference(localKnowledgeTool)
-                .creating(SlidePage.class)
-                .fromPrompt(String.format("""
+                // .withReference(localKnowledgeTool)
+                // .withPromptContributor(PresentationPersonas.WRITER)
+                .createObject(String.format("""
                         Modify Page %d of the presentation.
                         CURRENT RAW CONTENT:
                         %s
@@ -250,7 +219,7 @@ public class PresentationAgent {
                         2. Select 'templateName'.
                         3. Fill 'leftContent', 'rightContent', or 'fullWidthContent' as appropriate.
                         4. ALL text content MUST BE in KOREAN.
-                        """, targetPage, currentRawFile, input.getContent()));
+                        """, targetPage, currentRawFile, input.getContent()), SlidePage.class);
         
         fileService.savePage(updated.pageNumber(), updated.templateName(), updated.toMarkdown());
         return updated;

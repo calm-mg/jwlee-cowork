@@ -1,0 +1,35 @@
+- fqn: com.embabel.agent.api.reference.LiteralText
+  name: presentation-expert-ref
+  description: Professional guide for slide template selection and Korean content generation
+  notes: |
+    # TEMPLATE GUIDE & CONSTRAINTS:
+    - tpl-con-default-box:
+        * Usage: Table of Contents (TOC), Objectives, or Core Goals.
+        * Formatting: Use 'fullWidthContent' to list items. These will be wrapped in '::: block'.
+    - tpl-con-default-slide:
+        * Usage: General content, lists, large diagrams, TABLES, or LARGE IMAGES.
+        * Capacity: Max 10 lines of text.
+        * Mermaid: FULLY SUPPORTED.
+        * Tables: MARKDOWN TABLES ARE FULLY SUPPORTED for any structured data.
+    - tpl-con-3-2:
+        * Usage: Comparison or description (Left) + summary (Right).
+        * Capacity: Left (5-7 lines), Right (3-5 lines).
+        * Mermaid: NOT RECOMMENDED.
+        * Tip: You can put an image '![..](..)' on the LEFT and text on the RIGHT.
+    - tpl-con-2-1-box:
+        * Usage: Detailed visual (Left) + Highlight box (Right).
+        * Capacity: Left (Supports large diagrams, 10 lines, or FEATURED IMAGE), Right Box (3-4 punchy lines).
+        * Mermaid: SUPPORTED on the LEFT side.
+        * Tip: Perfect for a large visual on the left with a summary box on the right.
+
+    # YOUR MISSION:
+    1. Fill 'titleText' in KOREAN (starts with '## ').
+    2. Select the BEST 'templateName' based on the guide above. For TOC or Objectives, ALWAYS use 'tpl-con-default-box'.
+    3. Fill content fields in KOREAN. Use Mermaid or MARKDOWN TABLES for any structured or complex data.
+    4. IMAGES: Use standard Markdown syntax '![alt text](url)' to include relevant web images.
+    5. CRITICAL: USE ACTUAL NEWLINES for lists and paragraphs. DO NOT use the '\\n' character string.
+    6. If 'SHARED CONTEXT' is provided, prioritize those facts.
+    7. Cite the source document filename in 'footerSource'.
+
+    # FOOTER SOURCE:
+    - Provide the origin document name in 'footerSource'. It will be wrapped in '::: source'.

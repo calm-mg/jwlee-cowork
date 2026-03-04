@@ -17,13 +17,13 @@ public class RagConfiguration {
     @Value("${embabel.agent.rag.import.dir:knowledge/documents}")
     private String importDir;
 
-    @Bean
+    @Bean(name = "directorySearch")
     public SearchOperations searchOperations() throws IOException {
         return new DirectoryTextSearch(importDir);
     }
 
-    @Bean
-    public ToolishRag localKnowledgeTool(SearchOperations searchOperations) {
-        return new ToolishRag("local_knowledge", "Search through local PDF and text documents in the knowledge folder", searchOperations);
+    @Bean(name = "directoryRagTool")
+    public ToolishRag localKnowledgeTool(SearchOperations directorySearch) {
+        return new ToolishRag("local_knowledge", "Simple directory-based text search (Legacy)", directorySearch);
     }
 }
