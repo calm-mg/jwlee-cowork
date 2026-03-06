@@ -30,4 +30,9 @@ public class MockConfluenceService implements ConfluenceService {
             new MeetingInfo("m2", "2025-02-21 주간 팀장 회의 (Mock)")
         );
     }
+
+    @Override
+    public String getPageStorage(String pageId) {
+        return "<html><body>Mock Page Content</body></html>";
+    }
 }

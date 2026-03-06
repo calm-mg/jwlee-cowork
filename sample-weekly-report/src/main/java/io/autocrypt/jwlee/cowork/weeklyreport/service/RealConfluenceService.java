@@ -44,6 +44,10 @@ public class RealConfluenceService implements ConfluenceService {
         this.restTemplate = restTemplate;
     }
 
+    public String getOkrPageId() {
+        return okrPageId;
+    }
+
     private HttpHeaders createAuthHeaders() {
         String auth = email + ":" + apiToken;
         byte[] encodedAuth = Base64.getEncoder().encode(auth.getBytes());
@@ -76,19 +80,29 @@ public class RealConfluenceService implements ConfluenceService {
             Document doc = Jsoup.parse(htmlContent);
             List<String> contents = new ArrayList<>();
             
-            doc.select("li").forEach(li -> contents.add("• " + li.text()));
+            // 1. 목록 추출 (중복 제거를 위해 직접 자식만 탐색하거나 텍스트 정제)
+            doc.select("li").forEach(li -> {
+                // li 내부의 중복된 태그(p, span 등)를 무시하고 실제 텍스트만 추출
+                String text = li.text().trim();
+                if (!text.isEmpty() && !contents.contains(text)) {
+                    contents.add(text);
+                }
+            });
             
+            // 2. 테이블 데이터 정제
             Elements tables = doc.select("table");
             for (Element table : tables) {
-                StringBuilder tableText = new StringBuilder("\n[Table Data]\n");
                 Elements rows = table.select("tr");
                 for (Element row : rows) {
                     String rowText = row.select("th, td").stream()
                             .map(Element::text)
+                            .map(String::trim)
+                            .filter(t -> !t.isEmpty())
                             .collect(Collectors.joining(" | "));
-                    tableText.append(rowText).append("\n");
+                    if (!rowText.isEmpty() && !contents.contains(rowText)) {
+                        contents.add(rowText);
+                    }
                 }
-                contents.add(tableText.toString());
             }
             
             return new OkrInfo("Current Quarter", contents, title);
@@ -108,14 +122,68 @@ public class RealConfluenceService implements ConfluenceService {
             Map<String, Object> body = (Map<String, Object>) response.getBody().get("body");
             String htmlContent = (String) ((Map<String, Object>) body.get("storage")).get("value");
 
-            Document doc = Jsoup.parse(htmlContent);
-            // 전체 텍스트를 그대로 가져오기
-            String fullText = doc.body().text();
-            
-            // AI가 파싱하기 쉽도록 전체 텍스트를 하나의 리포트로 전달
-            return List.of(new TeamReportInfo("ALL_TEAMS", fullText));
+            Document doc = Jsoup.parseBodyFragment(htmlContent);
+            List<TeamReportInfo> reports = new ArrayList<>();
+
+            Elements h4Elements = doc.select("h4");
+            for (Element h4 : h4Elements) {
+                String teamName = h4.text().trim();
+                if (teamName.endsWith("팀")) {
+                    Element parentSection = h4.parent();
+                    while (parentSection != null && !parentSection.tagName().equalsIgnoreCase("ac:layout-section")) {
+                        parentSection = parentSection.parent();
+                    }
+
+                    if (parentSection != null) {
+                        Element contentSection = parentSection.nextElementSibling();
+                        if (contentSection != null && contentSection.tagName().equalsIgnoreCase("ac:layout-section")) {
+                            StringBuilder formattedContent = new StringBuilder();
+                            
+                            // li만 추출하여 중복 방지 (p 태그는 li의 텍스트와 중복되는 경우가 많음)
+                            Elements lis = contentSection.select("li");
+                            if (lis.isEmpty()) {
+                                // 리스트가 없는 경우에만 p 태그 사용
+                                for (Element p : contentSection.select("p")) {
+                                    String text = p.text().trim();
+                                    if (!text.isEmpty()) formattedContent.append(text).append("\n");
+                                }
+                            } else {
+                                for (Element li : lis) {
+                                    String text = li.text().trim();
+                                    if (!text.isEmpty()) formattedContent.append("- ").append(text).append("\n");
+                                }
+                            }
+                            reports.add(new TeamReportInfo(teamName, formattedContent.toString()));
+                        }
+                    }
+                }
+            }
+
+            // 만약 파싱된 팀이 하나도 없다면 (구조가 다를 경우) 폴백으로 전체 텍스트 반환
+            if (reports.isEmpty()) {
+                reports.add(new TeamReportInfo("ALL_TEAMS", doc.body().text()));
+            }
+
+            return reports;
         } catch (Exception e) {
             return List.of(new TeamReportInfo("Error", "Failed to fetch meeting: " + e.getMessage()));
+        }
+    }
+
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public String getPageStorage(String pageId) {
+        if (pageId == null || pageId.isBlank()) return "";
+        String url = baseUrl + "/api/v2/pages/" + pageId + "?body-format=storage";
+        HttpEntity<String> entity = new HttpEntity<>(createAuthHeaders());
+        
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
+            Map<String, Object> body = (Map<String, Object>) response.getBody().get("body");
+            return (String) ((Map<String, Object>) body.get("storage")).get("value");
+        } catch (Exception e) {
+            return "Error fetching page " + pageId + ": " + e.getMessage();
         }
     }
 

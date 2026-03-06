@@ -7,9 +7,12 @@
     <div class="container">
         <div class="mb-4 d-flex justify-content-between align-items-center">
             <h2 th:text="${report.title}">Weekly Report</h2>
-            <div>
+            <div class="d-flex gap-2">
                 <a href="/" class="btn btn-secondary">Back to List</a>
                 <a th:href="@{/reports/{id}/download(id=${report.id})}" class="btn btn-success">Download HTML</a>
+                <form th:action="@{/reports/{id}/delete(id=${report.id})}" method="post" onsubmit="return confirm('이 보고서를 삭제하시겠습니까?');">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
             </div>
         </div>
 

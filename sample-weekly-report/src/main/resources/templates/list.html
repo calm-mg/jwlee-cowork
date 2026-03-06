@@ -25,8 +25,13 @@
                             <td th:text="${report.title}">Title</td>
                             <td th:text="${report.createdAt}">Date</td>
                             <td>
-                                <a th:href="@{/reports/{id}(id=${report.id})}" class="btn btn-sm btn-info text-white">View</a>
-                                <a th:href="@{/reports/{id}/download(id=${report.id})}" class="btn btn-sm btn-success">Download HTML</a>
+                                <div class="d-flex gap-1">
+                                    <a th:href="@{/reports/{id}(id=${report.id})}" class="btn btn-sm btn-info text-white">View</a>
+                                    <a th:href="@{/reports/{id}/download(id=${report.id})}" class="btn btn-sm btn-success">Download HTML</a>
+                                    <form th:action="@{/reports/{id}/delete(id=${report.id})}" method="post" onsubmit="return confirm('이 보고서를 삭제하시겠습니까?');">
+                                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         <tr th:if="${#lists.isEmpty(reports)}">

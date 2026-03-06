@@ -8,6 +8,8 @@ embabel-agent-api/src/main/resources/mcp/**
 
 .idea/**
 
+**/data/
+
 .claude
 
 **/*.log

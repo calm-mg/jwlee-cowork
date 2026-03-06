@@ -9,4 +9,5 @@ public interface ConfluenceService {
     OkrInfo getOkr();
     List<TeamReportInfo> getTeamReports(String meetingUrl);
     List<MeetingInfo> getRecentMeetingUrls();
+    String getPageStorage(String pageId);
 }

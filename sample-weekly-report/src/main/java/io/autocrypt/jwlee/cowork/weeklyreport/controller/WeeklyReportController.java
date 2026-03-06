@@ -6,6 +6,8 @@ import io.autocrypt.jwlee.cowork.weeklyreport.domain.WeeklyReportEntity;
 import io.autocrypt.jwlee.cowork.weeklyreport.service.ConfluenceService;
 import io.autocrypt.jwlee.cowork.weeklyreport.service.WeeklyReportService;
 import io.autocrypt.jwlee.cowork.weeklyreport.dto.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +16,8 @@ import java.util.List;
 
 @Controller
 public class WeeklyReportController {
+
+    private static final Logger log = LoggerFactory.getLogger(WeeklyReportController.class);
 
     private final WeeklyReportService weeklyReportService;
     private final ConfluenceService confluenceService;
@@ -46,22 +50,29 @@ public class WeeklyReportController {
     @GetMapping("/status/{processId}")
     public String checkStatus(@PathVariable String processId, Model model) {
         AgentProcess process = weeklyReportService.getProcess(processId);
-        if (process == null) return "fragments/error :: error";
+        if (process == null) {
+            log.warn("Process not found for id: {}", processId);
+            return "fragments/error :: error";
+        }
+
+        log.info("Checking status for process {}: {}", processId, process.getStatus());
 
         model.addAttribute("processId", processId);
         model.addAttribute("statusCode", process.getStatus());
 
         if (process.getStatus() == AgentProcessStatusCode.WAITING) {
-            // 현재 머물고 있는 상태(State) 객체 추출
             io.autocrypt.jwlee.cowork.weeklyreport.agent.WeeklyReportAgent.AnalyzeTeamsState analyzeState = process.getBlackboard().last(io.autocrypt.jwlee.cowork.weeklyreport.agent.WeeklyReportAgent.AnalyzeTeamsState.class);
             io.autocrypt.jwlee.cowork.weeklyreport.agent.WeeklyReportAgent.FinalizeReportState finalizeState = process.getBlackboard().last(io.autocrypt.jwlee.cowork.weeklyreport.agent.WeeklyReportAgent.FinalizeReportState.class);
             
+            log.info("AnalyzeTeamsState present: {}", analyzeState != null);
+            log.info("FinalizeReportState present: {}", finalizeState != null);
+
             if (finalizeState != null) {
-                // 2단계: 최종 보고서 검토 상태
                 model.addAttribute("finalReport", finalizeState.report());
             } else if (analyzeState != null) {
-                // 1단계: 팀별 분석 검토 상태
                 model.addAttribute("analyses", analyzeState.analyses());
+            } else {
+                log.warn("WAITING status but no known state object found on blackboard!");
             }
 
             return "fragments/approval-form :: form";
@@ -115,5 +126,11 @@ public class WeeklyReportController {
         headers.setContentDisposition(org.springframework.http.ContentDisposition.attachment().filename("weekly_report_" + id + ".html").build());
         
         return new org.springframework.http.ResponseEntity<>(content, headers, org.springframework.http.HttpStatus.OK);
+    }
+
+    @PostMapping("/reports/{id}/delete")
+    public String deleteReport(@PathVariable Long id) {
+        weeklyReportService.deleteReport(id);
+        return "redirect:/";
     }
 }

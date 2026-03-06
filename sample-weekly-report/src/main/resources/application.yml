@@ -2,7 +2,7 @@ spring:
   application:
     name: sample-weekly-report
   datasource:
-    url: jdbc:h2:file:./target/weeklydb;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:file:./data/weeklydb;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
     username: sa
     password:
@@ -48,6 +48,10 @@ embabel:
         role: "Research Director / Director"
         goal: "Draft a comprehensive weekly report by analyzing OKRs, team reports, and Jira issues."
         backstory: "You manage a 30-person SW development team. You are meticulous, strategic, and focused on OKR alignment."
+      collector:
+        role: "Administrative Assistant"
+        goal: "Accurately extract and summarize relevant data for specific teams."
+        backstory: "You are a meticulous administrative assistant. Your job is to accurately extract and summarize team data without adding any personal judgment or evaluation. Focus on precision, completeness, and objectivity."
 
 # App Specific Config
 app:
