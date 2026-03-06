@@ -31,7 +31,7 @@ embabel:
       #performant: gemini-2.5-flash-lite
       simple: gemini-2.5-flash
       normal: gemini-3-flash-preview
-      performant: gemini-3-pro-preview
+      performant: gemini-3-flash-preview
   agent:
     platform:
       llm-operations:
