@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.injected;
+package io.autocrypt.jwlee.cowork.agents.sample;
 
 import com.embabel.agent.api.common.Ai;
 import jakarta.validation.constraints.Pattern;

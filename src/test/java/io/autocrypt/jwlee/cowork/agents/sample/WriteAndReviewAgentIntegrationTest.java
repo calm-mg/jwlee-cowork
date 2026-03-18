@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.agent;
+package io.autocrypt.jwlee.cowork.agents.sample;
 
 import com.embabel.agent.api.invocation.AgentInvocation;
 import com.embabel.agent.domain.io.UserInput;

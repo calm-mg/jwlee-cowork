@@ -1,12 +1,12 @@
-package io.autocrypt.jwlee.cowork;
+package io.autocrypt.jwlee.cowork.agents.sample;
 
 import com.embabel.agent.api.invocation.AgentInvocation;
 import com.embabel.agent.core.AgentPlatform;
 import com.embabel.agent.domain.io.UserInput;
-import io.autocrypt.jwlee.cowork.agent.RootCauseAnalysisAgent;
-import io.autocrypt.jwlee.cowork.agent.ToolLoopAgent;
-import io.autocrypt.jwlee.cowork.agent.WriteAndReviewAgent;
-import io.autocrypt.jwlee.cowork.injected.InjectedDemo;
+import io.autocrypt.jwlee.cowork.agents.sample.RootCauseAnalysisAgent;
+import io.autocrypt.jwlee.cowork.agents.sample.ToolLoopAgent;
+import io.autocrypt.jwlee.cowork.agents.sample.WriteAndReviewAgent;
+import io.autocrypt.jwlee.cowork.agents.sample.InjectedDemo;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;

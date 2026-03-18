@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.agent;
+package io.autocrypt.jwlee.cowork.agents.sample;
 
 import com.embabel.agent.domain.io.UserInput;
 import com.embabel.agent.test.unit.FakeOperationContext;
