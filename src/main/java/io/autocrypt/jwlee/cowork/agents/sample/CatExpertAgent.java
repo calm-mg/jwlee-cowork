@@ -7,7 +7,7 @@ import com.embabel.agent.api.annotation.LlmTool;
 import com.embabel.agent.api.common.Ai;
 import com.embabel.agent.api.common.OperationContext;
 import com.embabel.agent.domain.io.UserInput;
-import io.autocrypt.jwlee.cowork.service.CatFactService;
+import io.autocrypt.jwlee.cowork.agents.sample.service.CatFactService;
 
 @Agent(description = "A cat expert who provides personalized cat facts based on user's lover profile")
 public class CatExpertAgent {

@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.config;
+package io.autocrypt.jwlee.cowork.core.rag;
 
 import com.embabel.agent.rag.service.RagServiceEnhancerProperties;
 import com.embabel.agent.rag.service.SearchOperations;

@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.config;
+package io.autocrypt.jwlee.cowork.core.rag;
 
 import com.embabel.common.ai.model.ModelProvider;
 import com.embabel.common.ai.model.ModelSelectionCriteria;

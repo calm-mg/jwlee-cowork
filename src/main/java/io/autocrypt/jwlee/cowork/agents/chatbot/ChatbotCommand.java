@@ -63,8 +63,10 @@ public class ChatbotCommand {
         reset();
     }
 
-    @ShellMethod(value = "Ask the main orchestrator chatbot a question or give a task.", key = "ask")
-    public void ask(@ShellOption(help = "The message to send to the chatbot") String message) {
+    /**
+     * Internal helper to process a message via the chatbot.
+     */
+    private void ask(String message) {
         if (currentSession == null) {
             // Create a session that prints AI responses to the terminal
             currentSession = chatbot.createSession(null, event -> {
@@ -84,9 +86,10 @@ public class ChatbotCommand {
         currentSession.onUserMessage(new UserMessage(message));
     }
 
-    @ShellMethod(value = "Reset the chatbot session memory.", key = "ask-reset")
-    public String reset() {
+    /**
+     * Internal helper to reset the current chat session.
+     */
+    private void reset() {
         this.currentSession = null;
-        return "Chat session reset.";
     }
 }

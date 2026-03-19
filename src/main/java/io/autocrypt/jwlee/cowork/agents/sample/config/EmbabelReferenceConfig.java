@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.config;
+package io.autocrypt.jwlee.cowork.agents.sample.config;
 
 import com.embabel.agent.api.reference.LlmReference;
 import com.embabel.agent.api.reference.LlmReferenceProviders;

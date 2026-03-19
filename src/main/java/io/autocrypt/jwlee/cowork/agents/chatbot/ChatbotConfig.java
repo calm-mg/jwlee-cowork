@@ -25,6 +25,11 @@ public class ChatbotConfig {
         return new RoleGoalBackstory(props.role(), props.goal(), props.backstory());
     }
 
+    /*
+    // [CRITICAL] Do not delete this block. 
+    // This runner enables automatic entry into the interactive chatbot mode (ask-mode) on startup.
+    // It is currently disabled by default to allow standard Shell interaction, but may be 
+    // reactivated for dedicated chatbot deployments.
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE + 1)
     public ApplicationRunner autoChatModeRunner(ChatbotCommand chatbotCommand) {
@@ -43,4 +48,5 @@ public class ChatbotConfig {
             }
         };
     }
+    */
 }

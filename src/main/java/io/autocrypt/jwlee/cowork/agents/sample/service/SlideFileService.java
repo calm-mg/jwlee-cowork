@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.service;
+package io.autocrypt.jwlee.cowork.agents.sample.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

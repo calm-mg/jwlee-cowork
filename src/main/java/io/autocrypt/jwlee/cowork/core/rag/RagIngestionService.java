@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.service;
+package io.autocrypt.jwlee.cowork.core.rag;
 
 import com.embabel.agent.rag.ingestion.policy.NeverRefreshExistingDocumentContentPolicy;
 import com.embabel.agent.rag.service.SearchOperations;

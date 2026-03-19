@@ -6,7 +6,7 @@ import com.embabel.agent.api.annotation.Agent;
 import com.embabel.agent.api.common.Ai;
 import com.embabel.agent.domain.io.UserInput;
 import com.embabel.agent.rag.tools.ToolishRag;
-import io.autocrypt.jwlee.cowork.service.RagIngestionService;
+import io.autocrypt.jwlee.cowork.core.rag.RagIngestionService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import java.nio.file.Path;

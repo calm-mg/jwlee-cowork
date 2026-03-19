@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.config;
+package io.autocrypt.jwlee.cowork.core.ui;
 
 import org.jline.terminal.Terminal;
 import org.jline.utils.AttributedString;

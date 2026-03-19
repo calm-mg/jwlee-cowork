@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.config;
+package io.autocrypt.jwlee.cowork.agents.sample.config;
 
 import com.embabel.agent.prompt.persona.RoleGoalBackstory;
 import org.springframework.boot.context.properties.ConfigurationProperties;

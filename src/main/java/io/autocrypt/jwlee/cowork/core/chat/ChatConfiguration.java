@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.config;
+package io.autocrypt.jwlee.cowork.core.chat;
 
 import com.embabel.chat.Chatbot;
 import com.embabel.agent.core.AgentPlatform;

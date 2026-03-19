@@ -125,6 +125,21 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <excludes>
+                        <exclude>io/autocrypt/jwlee/cowork/agents/sample/**</exclude>
+                        <exclude>io/autocrypt/jwlee/cowork/agents/scaffold/**</exclude>
+                    </excludes>
+                    <testExcludes>
+                        <testExclude>io/autocrypt/jwlee/cowork/agents/sample/**</testExclude>
+                        <testExclude>io/autocrypt/jwlee/cowork/agents/scaffold/**</testExclude>
+                    </testExcludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <configuration>
                     <archive>

@@ -8,7 +8,7 @@ import com.embabel.agent.api.common.ActionContext;
 import com.embabel.agent.core.CoreToolGroups;
 import com.embabel.agent.domain.io.UserInput;
 import com.embabel.agent.rag.tools.ToolishRag;
-import io.autocrypt.jwlee.cowork.service.SlideFileService;
+import io.autocrypt.jwlee.cowork.agents.sample.service.SlideFileService;
 import com.embabel.agent.api.reference.LlmReference;
 import com.embabel.agent.prompt.persona.RoleGoalBackstory;
 import org.springframework.beans.factory.annotation.Qualifier;

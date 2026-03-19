@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.service;
+package io.autocrypt.jwlee.cowork.agents.sample.service;
 
 import com.embabel.agent.api.annotation.LlmTool;
 import com.fasterxml.jackson.databind.JsonNode;
