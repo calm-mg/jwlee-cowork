@@ -13,6 +13,8 @@ embabel-agent-api/src/main/resources/mcp/**
 .claude
 
 **/*.log
+.shell.log*
+*.log.gz
 knowledge/.DS_Store
 output/
 **/.DS_Store
