@@ -17,6 +17,7 @@ def get_common_font_size(blocks):
 
 def parse_pdf(pdf_path: str, image_output_dir: str = None):
     doc = fitz.open(pdf_path)
+    pdf_title = os.path.splitext(os.path.basename(pdf_path))[0]
     if image_output_dir and not os.path.exists(image_output_dir):
         os.makedirs(image_output_dir)
 
@@ -35,13 +36,13 @@ def parse_pdf(pdf_path: str, image_output_dir: str = None):
             xref = img[0]
             bbox = page.get_image_bbox(img)
             if bbox:
-                image_filename = f"image_p{page_num + 1}_{img_index + 1}.png"
+                base_image = doc.extract_image(xref)
+                image_bytes = base_image["image"]
+                ext = base_image["ext"]
+                image_filename = f"image_{pdf_title}-p{page_num + 1}_{img_index + 1}.{ext}"
                 if image_output_dir:
-                    pix = fitz.Pixmap(doc, xref)
-                    if pix.n - pix.alpha > 3:  # CMYK: convert to RGB
-                        pix = fitz.Pixmap(fitz.csRGB, pix)
-                    pix.save(os.path.join(image_output_dir, image_filename))
-                    pix = None
+                    with open(os.path.join(image_output_dir, image_filename), "wb") as f:
+                        f.write(image_bytes)
 
                 image_elements = {
                     "type": "image_raw",

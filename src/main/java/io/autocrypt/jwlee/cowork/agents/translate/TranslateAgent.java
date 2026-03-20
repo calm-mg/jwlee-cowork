@@ -105,6 +105,9 @@ public class TranslateAgent {
 
             return new ReviewGlossaryState(wsPath, docContext, workspace, parser, objectMapper, translatorPersona);
         } catch (Exception e) {
+            ApplicationContextHolder.getPublisher().publishEvent(
+                new NotificationEvent("번역 시작 실패", "초기 설정 또는 컨텍스트 추출 중 오류가 발생했습니다: " + e.getMessage())
+            );
             throw new RuntimeException(e);
         }
     }
@@ -227,6 +230,9 @@ public class TranslateAgent {
 
                 return new TranslationLoopState(wsPath, context, state, workspace, translatorPersona);
             } catch (Exception e) {
+                ApplicationContextHolder.getPublisher().publishEvent(
+                    new NotificationEvent("PDF 파싱 실패", "PDF 구조 분석 중 오류가 발생했습니다: " + e.getMessage())
+                );
                 throw new RuntimeException(e);
             }
         }

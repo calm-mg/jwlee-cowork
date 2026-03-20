@@ -3,8 +3,6 @@ package io.autocrypt.jwlee.cowork.agents.translate;
 import com.embabel.agent.api.invocation.AgentInvocation;
 import com.embabel.agent.core.AgentPlatform;
 import com.embabel.agent.core.AgentProcess;
-import io.autocrypt.jwlee.cowork.core.ui.TerminalSpinner;
-import org.jline.terminal.Terminal;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
@@ -16,11 +14,9 @@ import java.util.concurrent.ExecutionException;
 public class TranslateCommand {
 
     private final AgentPlatform agentPlatform;
-    private final TerminalSpinner spinner;
 
-    public TranslateCommand(AgentPlatform agentPlatform, Terminal terminal) {
+    public TranslateCommand(AgentPlatform agentPlatform) {
         this.agentPlatform = agentPlatform;
-        this.spinner = new TerminalSpinner(terminal);
     }
 
     @ShellMethod(value = "Start a new translation task.", key = "translate start")
@@ -39,13 +35,8 @@ public class TranslateCommand {
                 .runAsync(new TranslateAgent.TranslateStartRequest(pdf, workspace))
                 .get();
 
-        spinner.start("Translating...");
-        try {
-            while (!process.getFinished()) {
-                Thread.sleep(500);
-            }
-        } finally {
-            spinner.stop();
+        while (!process.getFinished()) {
+            Thread.sleep(500);
         }
 
         TranslateAgent.TranslationResult result = process.resultOfType(TranslateAgent.TranslationResult.class);
@@ -68,13 +59,8 @@ public class TranslateCommand {
                 .runAsync(new TranslateAgent.TranslateResumeRequest(workspace))
                 .get();
 
-        spinner.start("Resuming Translation...");
-        try {
-            while (!process.getFinished()) {
-                Thread.sleep(500);
-            }
-        } finally {
-            spinner.stop();
+        while (!process.getFinished()) {
+            Thread.sleep(500);
         }
 
         TranslateAgent.TranslationResult result = process.resultOfType(TranslateAgent.TranslationResult.class);
