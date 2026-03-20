@@ -66,6 +66,22 @@ public class CoreFileTools {
         return FileResult.success(path, "Successfully created and wrote to " + path);
     }
 
+    /**
+     * Utility method for agents to safely save generated reports or long-form content.
+     * Automatically creates directories and overwrites existing files.
+     */
+    public String saveGeneratedContent(String filename, String content) throws IOException {
+        Path filePath = resolveAndCheckPath("output/" + filename);
+        if (filePath.getParent() != null) Files.createDirectories(filePath.getParent());
+        Files.writeString(filePath, content, StandardCharsets.UTF_8);
+        
+        terminal.writer().println(new AttributedString("✔ Content saved to: " + filePath, 
+                AttributedStyle.DEFAULT.foreground(AttributedStyle.GREEN)).toAnsi());
+        terminal.writer().flush();
+        
+        return filePath.toString();
+    }
+
     @LlmTool(description = "Lists files in a directory. Returns a list of names.")
     public List<String> listDirectory(String path) throws IOException {
         Path dirPath = resolveAndCheckPath(path);
