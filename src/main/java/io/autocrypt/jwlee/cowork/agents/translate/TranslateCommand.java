@@ -3,6 +3,11 @@ package io.autocrypt.jwlee.cowork.agents.translate;
 import com.embabel.agent.api.invocation.AgentInvocation;
 import com.embabel.agent.core.AgentPlatform;
 import com.embabel.agent.core.AgentProcess;
+import com.embabel.agent.core.AgentProcessStatusCode;
+import com.embabel.agent.core.EarlyTerminationPolicy;
+import com.embabel.agent.core.ProcessOptions;
+import io.autocrypt.jwlee.cowork.core.hitl.ApplicationContextHolder;
+import io.autocrypt.jwlee.cowork.core.hitl.NotificationEvent;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
@@ -19,6 +24,21 @@ public class TranslateCommand {
         this.agentPlatform = agentPlatform;
     }
 
+    private ProcessOptions getProcessOptions() {
+        return ProcessOptions.DEFAULT.withAdditionalEarlyTerminationPolicy(EarlyTerminationPolicy.maxActions(500));
+    }
+
+    private String handleProcessCompletion(AgentProcess process) {
+        if (process.getStatus() != AgentProcessStatusCode.COMPLETED) {
+            String errorMsg = "번역 프로세스가 비정상 종료되었습니다: " + process.getStatus();
+            ApplicationContextHolder.getPublisher().publishEvent(new NotificationEvent("번역 실패", errorMsg));
+            return "Error: " + errorMsg;
+        }
+
+        TranslateAgent.TranslationResult result = process.resultOfType(TranslateAgent.TranslationResult.class);
+        return result != null ? result.message() : "Translation Process completed without a result.";
+    }
+
     @ShellMethod(value = "Start a new translation task.", key = "translate start")
     public String start(
             @ShellOption(help = "Path to the PDF file") String pdf,
@@ -32,6 +52,7 @@ public class TranslateCommand {
 
         AgentProcess process = AgentInvocation
                 .create(agentPlatform, TranslateAgent.TranslationResult.class)
+                .withProcessOptions(getProcessOptions())
                 .runAsync(new TranslateAgent.TranslateStartRequest(pdf, workspace))
                 .get();
 
@@ -39,8 +60,7 @@ public class TranslateCommand {
             Thread.sleep(500);
         }
 
-        TranslateAgent.TranslationResult result = process.resultOfType(TranslateAgent.TranslationResult.class);
-        return result != null ? result.message() : "Translation Process Interrupted.";
+        return handleProcessCompletion(process);
     }
 
     @ShellMethod(value = "Resume an existing translation task.", key = "translate resume")
@@ -56,6 +76,7 @@ public class TranslateCommand {
 
         AgentProcess process = AgentInvocation
                 .create(agentPlatform, TranslateAgent.TranslationResult.class)
+                .withProcessOptions(getProcessOptions())
                 .runAsync(new TranslateAgent.TranslateResumeRequest(workspace))
                 .get();
 
@@ -63,7 +84,6 @@ public class TranslateCommand {
             Thread.sleep(500);
         }
 
-        TranslateAgent.TranslationResult result = process.resultOfType(TranslateAgent.TranslationResult.class);
-        return result != null ? result.message() : "Translation Process Interrupted.";
+        return handleProcessCompletion(process);
     }
 }
