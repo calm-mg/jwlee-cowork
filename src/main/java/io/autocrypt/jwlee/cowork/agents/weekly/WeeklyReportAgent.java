@@ -10,6 +10,7 @@ import io.autocrypt.jwlee.cowork.core.hitl.ApprovalDecision;
 import io.autocrypt.jwlee.cowork.core.hitl.ApprovalRequestedEvent;
 import io.autocrypt.jwlee.cowork.core.hitl.ApplicationContextHolder;
 import io.autocrypt.jwlee.cowork.core.tools.CoreFileTools;
+import jakarta.validation.constraints.Size;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -66,8 +67,26 @@ public class WeeklyReportAgent {
     @State
     public interface Stage {}
 
-    public record TeamOpinion(String teamName, String opinion) {}
-    public record TeamOpinionList(List<TeamOpinion> opinions) {}
+    public record TeamOpinions(
+        String eeTeamOpinion,
+        String beTeamOpinion,
+        String pkiTeamOpinion,
+        String pncTeamOpinion,
+        String feTeamOpinion,
+        String engTeamOpinion
+    ) {
+        public String getOpinion(String teamName) {
+            return switch (teamName) {
+                case "EE팀" -> eeTeamOpinion;
+                case "BE팀" -> beTeamOpinion;
+                case "PKI팀" -> pkiTeamOpinion;
+                case "PnC팀" -> pncTeamOpinion;
+                case "FE팀" -> feTeamOpinion;
+                case "Eng팀" -> engTeamOpinion;
+                default -> "분석 의견을 생성하지 못했습니다.";
+            };
+        }
+    }
 
     @Action
     public AnalyzeTeamsState start(RawWeeklyData rawData, JiraIssueList jiraIssueList, Ai ai, ActionContext ctx) {
@@ -136,22 +155,19 @@ public class WeeklyReportAgent {
             
             # 출력 지침:
             - 각 팀별로 충분한 깊이의 분석 의견을 작성하세요. (글자 수 제한 없음)
-            - 결과는 TeamOpinionList 형식에 맞게 응답하세요.
-            - 주의: teamName 필드는 원본 팀명(EE팀, BE팀, PKI팀, PnC팀, FE팀, Eng팀)과 정확히 일치해야 합니다. 누락되는 팀이 없도록 하세요.
+            - 제공된 JSON 스키마 형식에 맞게 각 팀의 의견(eeTeamOpinion, beTeamOpinion 등)을 정확한 필드에 작성하세요. 누락되는 팀이 없도록 하세요.
             """, TEAM_RNR_INFO, dataText, feedback != null ? "\n# 이전 피드백 반영 지시:\n" + feedback : "");
 
-        TeamOpinionList opinionList = ai.withLlmByRole(role).withPromptContributor(analystPersona)
-                .creating(TeamOpinionList.class).fromPrompt(prompt);
+        TeamOpinions opinions = ai.withLlmByRole(role).withPromptContributor(analystPersona)
+                .creating(TeamOpinions.class).fromPrompt(prompt);
 
         return extractedData.stream().map(d -> {
-            String coreName = d.teamName().replace("팀", "").trim().toUpperCase();
-            String op = opinionList.opinions().stream()
-                    .filter(o -> {
-                        if (o.teamName() == null) return false;
-                        String oName = o.teamName().replace("팀", "").trim().toUpperCase();
-                        return oName.equals(coreName) || oName.startsWith(coreName);
-                    })
-                    .map(TeamOpinion::opinion).findFirst().orElse("분석 의견을 생성하지 못했습니다.");
+            String op = opinions.getOpinion(d.teamName());
+            if (op == null || op.isBlank()) {
+                System.err.println("[BUG] 분석 의견 누락 발생! 팀명: " + d.teamName());
+                System.err.println("[DEBUG] LLM Raw Response: " + opinions);
+                op = "분석 의견을 생성하지 못했습니다.";
+            }
             return new TeamAnalysis(d.teamName(), d.currentOkr(), d.currentMeetingIssues(), d.currentJiraIssues(), op);
         }).toList();
     }
