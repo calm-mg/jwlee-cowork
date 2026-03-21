@@ -1,4 +1,4 @@
-package io.autocrypt.jwlee.cowork.agents.demo;
+package io.autocrypt.jwlee.cowork.agents.sample.hitl;
 
 import com.embabel.agent.api.annotation.AchievesGoal;
 import com.embabel.agent.api.annotation.Action;

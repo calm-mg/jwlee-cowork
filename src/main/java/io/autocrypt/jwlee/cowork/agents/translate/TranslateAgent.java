@@ -42,8 +42,8 @@ public class TranslateAgent {
             """
             **Tone and Style Guidelines:**
             - Maintain a formal, professional, and objective tone.
-            - Use plain statements (~한다, ~이다) for body text.
-            - Use noun-based endings (~함, ~음, ~임) for definitions, list items, and headings to improve readability.
+            - Use plain statements for body text.
+            - Use noun-based endings for definitions, list items, and headings to improve readability.
             - Ensure that the logical structure and hierarchical relationship of concepts are preserved.
             
             **Markdown Formatting:**
@@ -296,7 +296,7 @@ public class TranslateAgent {
                     If the source text contains unnatural line breaks in the middle of sentences (common in old PDF documents), merge them into natural flowing sentences in the translation output.
 
                     # Instructions:
-                    1. **Tone and Style**: Use formal, professional Korean suitable for technical standards or manuals (e.g., end sentences with '~함', '~임', '~이다', '~한다').
+                    1. **Tone and Style**: Use formal, professional Korean suitable for technical standards or manuals.
                     2. **Glossary**: Strictly adhere to the provided glossary for terminology translation.
                     3. **Markup Preservation**: Do NOT alter, translate, or remove any markdown syntax.
                     4. **Context**: Consider the provided document summary and the previous translation context to maintain consistency in style and terminology.
