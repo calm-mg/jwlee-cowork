@@ -1,6 +1,9 @@
 package io.autocrypt.jwlee.cowork.agents.presales;
 
 import com.embabel.agent.api.common.Ai;
+import com.embabel.agent.api.invocation.AgentInvocation;
+import com.embabel.agent.core.AgentPlatform;
+import com.embabel.agent.core.AgentProcess;
 import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
@@ -17,12 +20,14 @@ public class PresalesCommand {
     private final PresalesWorkspace workspace;
     private final LocalRagTools ragTools;
     private final Ai ai;
+    private final AgentPlatform agentPlatform;
 
-    public PresalesCommand(PresalesAgent agent, PresalesWorkspace workspace, LocalRagTools ragTools, Ai ai) {
+    public PresalesCommand(PresalesAgent agent, PresalesWorkspace workspace, LocalRagTools ragTools, Ai ai, AgentPlatform agentPlatform) {
         this.agent = agent;
         this.workspace = workspace;
         this.ragTools = ragTools;
         this.ai = ai;
+        this.agentPlatform = agentPlatform;
     }
 
     @ShellMethod(value = "Ingest documents into presales RAG indices.", key = "presales-ingest")
@@ -40,33 +45,39 @@ public class PresalesCommand {
         return ragTools.ingestDirectoryAt(path, ragName, indexPath);
     }
 
-    @ShellMethod(value = "Start full presales analysis from a customer email.", key = "presales-start")
+    @ShellMethod(value = "Start full presales analysis from customer inquiry (email, chat, transcript).", key = "presales-start")
     public String start(
-            @ShellOption(value = "--email-path", help = "Path to the customer email file") String emailPath,
+            @ShellOption(value = "--source-path", help = "Path to the customer inquiry file (txt, md, etc.)") String sourcePath,
             @ShellOption(value = "--ws", help = "Workspace name") String wsName) throws IOException {
         
-        Path emailFile = Path.of(emailPath).toAbsolutePath().normalize();
+        Path sourceFile = Path.of(sourcePath).toAbsolutePath().normalize();
         Path wsPath = workspace.initWorkspace(wsName);
-        String emailContent = Files.readString(emailFile);
+        String sourceContent = Files.readString(sourceFile);
 
-        // 이메일 파일이 위치한 폴더의 상위에 rag/ 폴더가 있다고 가정
-        Path ragBasePath = emailFile.getParent().resolve("rag");
+        // 소스 파일이 위치한 폴더의 상위에 rag/ 폴더가 있다고 가정
+        Path ragBasePath = sourceFile.getParent().resolve("rag");
         Path techRagPath = ragBasePath.resolve("tech-ref");
         Path productRagPath = ragBasePath.resolve("product-spec");
 
         // 1. Detect language
-        String langPrompt = "Identify the language of the following text (e.g., 'English', 'Korean'). Output ONLY the language name: \n\n" + emailContent;
+        String langPrompt = "Identify the language of the following text (e.g., 'English', 'Korean'). Output ONLY the language name: \n\n" + sourceContent;
         String language = ai.withLlmByRole("simple").generateText(langPrompt).trim();
 
         // 2. Phase 1: Refine Requirements
         System.out.println("Phase 1: Refining requirements using tech-ref RAG at " + techRagPath);
-        String crs = agent.refineRequirements(emailContent, techRagPath, ai);
+        
+        AgentProcess process = AgentInvocation
+                .create(agentPlatform, String.class)
+                .runAsync(new PresalesAgent.RequirementRequest(sourceContent, techRagPath))
+                .join();
+        
+        String crs = process.resultOfType(String.class);
         workspace.saveCrs(wsPath, crs);
 
         // 3. Save State (RAG 경로 저장)
         workspace.saveState(wsPath, new PresalesWorkspace.PresalesState(
             wsName, 
-            emailPath, 
+            sourcePath, 
             language, 
             techRagPath.toString(), 
             productRagPath.toString(), 
@@ -95,7 +106,13 @@ public class PresalesCommand {
 
     private String runPhase2(Path wsPath, String wsName, String language, String crs, Path productRagPath) throws IOException {
         System.out.println("Phase 2: Analyzing gap and generating final report using product-spec RAG at " + productRagPath);
-        PresalesAgent.AnalysisResult result = agent.analyzeGapAndFinalize(crs, language, productRagPath, ai);
+        
+        AgentProcess process = AgentInvocation
+                .create(agentPlatform, PresalesAgent.AnalysisResult.class)
+                .runAsync(new PresalesAgent.GapAnalysisRequest(crs, language, productRagPath))
+                .join();
+        
+        PresalesAgent.AnalysisResult result = process.resultOfType(PresalesAgent.AnalysisResult.class);
 
         workspace.saveAnalysis(wsPath, result.gapAnalysis());
         workspace.saveQuestions(wsPath, result.questions());
@@ -105,7 +122,7 @@ public class PresalesCommand {
         PresalesWorkspace.PresalesState oldState = workspace.loadState(wsPath);
         workspace.saveState(wsPath, new PresalesWorkspace.PresalesState(
             wsName, 
-            oldState != null ? oldState.originalEmailPath() : null, 
+            oldState != null ? oldState.sourcePath() : null, 
             language, 
             oldState != null ? oldState.techRagPath() : null, 
             productRagPath.toString(), 

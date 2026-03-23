@@ -20,7 +20,7 @@ public class PresalesWorkspace {
 
     public record PresalesState(
             String workspaceName,
-            String originalEmailPath,
+            String sourcePath, // renamed from originalEmailPath
             String language,
             String techRagPath,
             String productRagPath,
