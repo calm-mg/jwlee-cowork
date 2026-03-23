@@ -154,13 +154,13 @@ public class AnkiAgent {
                     .creating(RawTerms.class)
                     .fromPrompt(String.format("""
                             # TASK
-                            Extract technical terms, acronyms, and core concepts from this segment and assign an **Importance Score (0.0 to 1.0)**.
+                            Extract technical terms, acronyms, and core concepts from this segment and assign an **Importance Score (0.0 to 1.0)** to each.
 
                             # SCORING CRITERIA
-                            - **0.9 - 1.0 (Critical):** Fundamental concepts, primary protocols, or architecture-defining terms.
-                            - **0.6 - 0.8 (Important):** Key data structures, specific security mechanisms, or essential procedures.
-                            - **0.3 - 0.5 (Secondary):** Minor fields, specific parameters, or non-essential sub-components.
-                            - **0.1 - 0.2 (Trivial):** Common IT words, repetitive boilerplate, or niche details.
+                            - **0.9 - 1.0 (Critical):** Terms that are fundamental to the document's core subject. This includes primary protocols, system architectures, or concepts without which the document cannot be understood.
+                            - **0.7 - 0.8 (Important):** Key supporting concepts, specific security mechanisms, major data structures, or essential operational procedures. These are important for a deep understanding but are not the absolute foundation.
+                            - **0.4 - 0.6 (Secondary):** Specific parameters, minor fields, optional sub-components, or niche implementation details.
+                            - **0.1 - 0.3 (Trivial):** Generic IT terminology, common English words used in a technical context, repetitive boilerplate, or irrelevant details.
 
                             # DOCUMENT SUMMARY (Use this for scoring context)
                             %s
@@ -172,9 +172,9 @@ public class AnkiAgent {
                             %s
 
                             # INSTRUCTIONS
-                            1. Extract terms strictly in **English**.
-                            2. Use **Title Case** for all terms (e.g., "Transport Layer Security").
-                            3. Return a JSON list of terms with their scores.
+                            1. Extract **at most 25** high-quality terms strictly in **English**.
+                            2. **Only extract terms that merit a score HIGHER than 0.6**. If a term is less important, ignore it.
+                            3. Use **Title Case** for all terms (e.g., "Advanced Encryption Standard").
                             4. Do not include Korean translations in this phase.
                             5. <example>{"term": "Digital Signature", "score": 0.95}</example>
                             """, state.overview().summary(), chunkIdx + 1, chunks.size(), chunk, existingTermsSample));            
@@ -182,7 +182,7 @@ public class AnkiAgent {
                 int addedCount = 0;
                 for (ScoredTerm st : newScoredTerms.terms()) {
                     String normalizedTerm = st.term().trim();
-                    if (allScoredTerms.stream().noneMatch(e -> e.term().equalsIgnoreCase(normalizedTerm))) {
+                    if (st.score() > 0.6 && allScoredTerms.stream().noneMatch(e -> e.term().equalsIgnoreCase(normalizedTerm))) {
                         allScoredTerms.add(new ScoredTerm(normalizedTerm, st.score()));
                         addedCount++;
                     }
