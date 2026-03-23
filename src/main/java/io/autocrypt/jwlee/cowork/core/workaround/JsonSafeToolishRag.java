@@ -59,17 +59,14 @@ public class JsonSafeToolishRag implements LlmReference {
 
     private Tool wrapTool(Tool originalTool) {
         return (Tool) Proxy.newProxyInstance(
-                Tool.class.getClassLoader(),
+                JsonSafeToolishRag.class.getClassLoader(),
                 new Class<?>[]{Tool.class},
-                new InvocationHandler() {
-                    @Override
-                    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                        if ("call".equals(method.getName()) && args != null && args.length == 1 && args[0] instanceof String) {
-                            Tool.Result originalResult = (Tool.Result) method.invoke(originalTool, args);
-                            return wrapResult(originalResult);
-                        }
-                        return method.invoke(originalTool, args);
+                (proxy, method, args) -> {
+                    if ("call".equals(method.getName()) && args != null && args.length == 1 && args[0] instanceof String) {
+                        Tool.Result originalResult = (Tool.Result) method.invoke(originalTool, args);
+                        return wrapResult(originalResult);
                     }
+                    return method.invoke(originalTool, args);
                 }
         );
     }
