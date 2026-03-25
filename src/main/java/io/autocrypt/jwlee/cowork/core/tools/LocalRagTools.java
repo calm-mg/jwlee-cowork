@@ -91,6 +91,21 @@ public class LocalRagTools {
     }
 
     /**
+     * Closes a managed in-memory Lucene instance.
+     */
+    public synchronized void closeMemoryInstance(String ragName) {
+        String key = "mem:" + ragName;
+        var lucene = activeInstances.remove(key);
+        if (lucene != null) {
+            try {
+                lucene.close();
+            } catch (Exception e) {
+                logger.error("Error closing memory Lucene instance {}", ragName, e);
+            }
+        }
+    }
+
+    /**
      * Closes a managed Lucene instance.
      */
     public synchronized void closeInstance(String ragName) {
@@ -156,6 +171,33 @@ public class LocalRagTools {
         } catch (Exception e) {
             logger.error("Ingestion failed for {} at {}", location, indexPath, e);
             return "ERROR: Ingestion failed: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Ingests all files in a directory into an in-memory RAG index.
+     */
+    public String ingestDirectoryToMemory(String directoryPath, String ragName) {
+        try {
+            Path dir = Path.of(directoryPath).toAbsolutePath();
+            if (!Files.isDirectory(dir)) return "Error: Not a directory.";
+
+            var lucene = getOrOpenMemoryInstance(ragName);
+            int count = 0;
+            try (Stream<Path> paths = Files.walk(dir)) {
+                List<Path> files = paths.filter(Files::isRegularFile).toList();
+                for (Path file : files) {
+                    var uri = file.toUri().toString();
+                    if (NeverRefreshExistingDocumentContentPolicy.INSTANCE.ingestUriIfNeeded(
+                            lucene, new TikaHierarchicalContentReader(), uri) != null) {
+                        count++;
+                    }
+                }
+            }
+            return "SUCCESS: Ingested " + count + " documents into memory.";
+        } catch (Exception e) {
+            logger.error("In-memory directory ingestion failed for {} in {}", directoryPath, ragName, e);
+            return "ERROR: In-memory directory ingestion failed: " + e.getMessage();
         }
     }
 

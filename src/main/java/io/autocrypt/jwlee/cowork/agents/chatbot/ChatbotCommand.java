@@ -31,27 +31,18 @@ public class ChatbotCommand {
     private final LocalRagTools localRagTools;
     private final TerminalSpinner spinner;
     private ChatSession currentSession;
-    private final String ragDir;
 
-    public ChatbotCommand(Chatbot chatbot, Terminal terminal, LocalRagTools localRagTools,
-                          @Value("${app.chatbot.rag-dir:output/rag-chatbot}") String ragDir) {
+    public ChatbotCommand(Chatbot chatbot, Terminal terminal, LocalRagTools localRagTools) {
         this.chatbot = chatbot;
         this.terminal = terminal;
         this.localRagTools = localRagTools;
-        this.ragDir = ragDir;
         this.spinner = new TerminalSpinner(terminal);
     }
 
     @ShellMethod(value = "Enter interactive chat mode.", key = {"ask", "chat"})
     public void chatMode() {
-        // Clear 'chatbot' RAG before starting (zap now handles exceptions internally)
-        localRagTools.zap("chatbot");
-
-        // Auto-ingest files from the configured directory
-        Path ragPath = Paths.get(ragDir);
-        if (Files.exists(ragPath) && Files.isDirectory(ragPath)) {
-            localRagTools.ingestDirectory(ragDir, "chatbot");
-        }
+        // Ensure 'chatbot' in-memory instance is fresh
+        localRagTools.closeMemoryInstance("chatbot");
 
         try {
             // Build LineReader with persistent history file support
@@ -79,8 +70,8 @@ public class ChatbotCommand {
                 }
             }
         } finally {
-            // Clear 'chatbot' RAG after session ends
-            localRagTools.zap("chatbot");
+            // Clear 'chatbot' in-memory instance after session ends
+            localRagTools.closeMemoryInstance("chatbot");
             reset();
         }
     }
