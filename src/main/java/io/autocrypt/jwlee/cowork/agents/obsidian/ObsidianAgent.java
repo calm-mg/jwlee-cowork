@@ -6,6 +6,8 @@ import com.embabel.agent.api.annotation.Agent;
 import com.embabel.agent.api.common.ActionContext;
 import com.embabel.agent.api.common.Ai;
 
+import io.autocrypt.jwlee.cowork.core.hitl.ApplicationContextHolder;
+import io.autocrypt.jwlee.cowork.core.hitl.NotificationEvent;
 import io.autocrypt.jwlee.cowork.core.prompts.PromptProvider;
 import io.autocrypt.jwlee.cowork.core.tools.CoreFileTools;
 import io.autocrypt.jwlee.cowork.core.tools.CoworkLogger;
@@ -103,6 +105,11 @@ public class ObsidianAgent {
         log("Daily note written to vault.");
 
         gitTools.commitAndPush("Auto-generated daily note for " + today);
+
+        ApplicationContextHolder.getPublisher().publishEvent(
+            new NotificationEvent("Daily note 생성 완료", "오늘의 Obsidian 문서를 생성했습니다: " + relativePath)
+        );
+
         return new ObsidianResult("Successfully created and pushed daily note: " + relativePath);
     }
 
@@ -160,6 +167,11 @@ public class ObsidianAgent {
         log("Weekly note written to vault.");
 
         gitTools.commitAndPush("Auto-generated weekly note for " + thisWeek);
+
+        ApplicationContextHolder.getPublisher().publishEvent(
+            new NotificationEvent("Weekly note 생성 완료", "이번주 Obsidian 문서를 생성했습니다: " + relativePath)
+        );
+
         return new ObsidianResult("Successfully created weekly note: " + relativePath);
     }
 }
