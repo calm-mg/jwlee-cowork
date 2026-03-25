@@ -4,6 +4,7 @@ import com.embabel.agent.api.common.Ai;
 import com.embabel.agent.api.invocation.AgentInvocation;
 import com.embabel.agent.core.AgentPlatform;
 import com.embabel.agent.core.AgentProcess;
+import io.autocrypt.jwlee.cowork.core.tools.CoreWorkspaceProvider;
 import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
@@ -21,28 +22,29 @@ public class PresalesCommand {
     private final LocalRagTools ragTools;
     private final Ai ai;
     private final AgentPlatform agentPlatform;
+    private final CoreWorkspaceProvider workspaceProvider;
+    private static final String AGENT_NAME = "presales";
 
-    public PresalesCommand(PresalesAgent agent, PresalesWorkspace workspace, LocalRagTools ragTools, Ai ai, AgentPlatform agentPlatform) {
+    public PresalesCommand(PresalesAgent agent, PresalesWorkspace workspace, LocalRagTools ragTools, 
+                          Ai ai, AgentPlatform agentPlatform, CoreWorkspaceProvider workspaceProvider) {
         this.agent = agent;
         this.workspace = workspace;
         this.ragTools = ragTools;
         this.ai = ai;
         this.agentPlatform = agentPlatform;
+        this.workspaceProvider = workspaceProvider;
     }
 
     @ShellMethod(value = "Ingest documents into presales RAG indices.", key = "presales-ingest")
     public String ingest(
             @ShellOption(value = "--type", help = "RAG type (TECH or PRODUCT)") String type,
-            @ShellOption(value = "--path", help = "Directory path to ingest") String path) {
+            @ShellOption(value = "--path", help = "Directory path to ingest") String path,
+            @ShellOption(value = "--ws", help = "Workspace name", defaultValue = "common") String wsName) throws IOException {
         
-        Path dataPath = Path.of(path).toAbsolutePath().normalize();
         String ragName = type.equalsIgnoreCase("TECH") ? "tech-ref" : "product-spec";
+        Path ragPath = workspaceProvider.getSubPath(AGENT_NAME, wsName, CoreWorkspaceProvider.SubCategory.RAG).resolve(ragName);
         
-        // 데이터 폴더의 상위 폴더에 rag/ 폴더 생성
-        Path ragBasePath = dataPath.getParent().resolve("rag");
-        Path indexPath = ragBasePath.resolve(ragName);
-        
-        return ragTools.ingestDirectoryAt(path, ragName, indexPath);
+        return ragTools.ingestDirectoryAt(path, ragName, ragPath);
     }
 
     @ShellMethod(value = "Start full presales analysis from customer inquiry (email, chat, transcript).", key = "presales-start")
@@ -50,12 +52,10 @@ public class PresalesCommand {
             @ShellOption(value = "--source-path", help = "Path to the customer inquiry file (txt, md, etc.)") String sourcePath,
             @ShellOption(value = "--ws", help = "Workspace name") String wsName) throws IOException {
         
-        Path sourceFile = Path.of(sourcePath).toAbsolutePath().normalize();
         Path wsPath = workspace.initWorkspace(wsName);
-        String sourceContent = Files.readString(sourceFile);
+        String sourceContent = Files.readString(Path.of(sourcePath).toAbsolutePath().normalize());
 
-        // 소스 파일이 위치한 폴더의 상위에 rag/ 폴더가 있다고 가정
-        Path ragBasePath = sourceFile.getParent().resolve("rag");
+        Path ragBasePath = workspaceProvider.getSubPath(AGENT_NAME, wsName, CoreWorkspaceProvider.SubCategory.RAG);
         Path techRagPath = ragBasePath.resolve("tech-ref");
         Path productRagPath = ragBasePath.resolve("product-spec");
 
@@ -129,6 +129,7 @@ public class PresalesCommand {
             PresalesWorkspace.PresalesState.Phase.COMPLETED
         ));
 
+        Path exportPath = wsPath.resolve(CoreWorkspaceProvider.SubCategory.EXPORT.getDirName());
         return String.format("""
             ✅ Analysis Completed!
             Workspace: %s
@@ -139,6 +140,6 @@ public class PresalesCommand {
             
             Results saved in: %s
             RAG Indices used from: %s
-            """, wsName, wsPath.toAbsolutePath(), productRagPath.getParent());
+            """, wsName, exportPath.toAbsolutePath(), productRagPath.getParent());
     }
 }

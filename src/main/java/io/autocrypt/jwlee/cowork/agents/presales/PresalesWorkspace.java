@@ -1,26 +1,23 @@
 package io.autocrypt.jwlee.cowork.agents.presales;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.autocrypt.jwlee.cowork.core.tools.CoreWorkspaceProvider;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 @Component
 public class PresalesWorkspace {
 
-    private static final String BASE_DIR = "output/presales";
     private final ObjectMapper objectMapper;
-
-    public PresalesWorkspace(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
+    private final CoreWorkspaceProvider workspaceProvider;
+    private static final String AGENT_NAME = "presales";
 
     public record PresalesState(
             String workspaceName,
-            String sourcePath, // renamed from originalEmailPath
+            String sourcePath,
             String language,
             String techRagPath,
             String productRagPath,
@@ -32,21 +29,33 @@ public class PresalesWorkspace {
         }
     }
 
+    public PresalesWorkspace(ObjectMapper objectMapper, CoreWorkspaceProvider workspaceProvider) {
+        this.objectMapper = objectMapper;
+        this.workspaceProvider = workspaceProvider;
+    }
+
     public Path initWorkspace(String name) throws IOException {
-        Path wsPath = Paths.get(BASE_DIR, name).toAbsolutePath().normalize();
-        if (!Files.exists(wsPath)) {
-            Files.createDirectories(wsPath);
-        }
+        Path wsPath = workspaceProvider.getWorkspacePath(AGENT_NAME, name);
+        workspaceProvider.getSubPath(AGENT_NAME, name, CoreWorkspaceProvider.SubCategory.STATE);
+        workspaceProvider.getSubPath(AGENT_NAME, name, CoreWorkspaceProvider.SubCategory.EXPORT);
         return wsPath;
     }
 
+    private Path getStatePath(Path wsPath) {
+        return wsPath.resolve(CoreWorkspaceProvider.SubCategory.STATE.getDirName());
+    }
+
+    private Path getExportPath(Path wsPath) {
+        return wsPath.resolve(CoreWorkspaceProvider.SubCategory.EXPORT.getDirName());
+    }
+
     public void saveState(Path wsPath, PresalesState state) throws IOException {
-        Path stateFile = wsPath.resolve("state.json");
+        Path stateFile = getStatePath(wsPath).resolve("state.json");
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(stateFile.toFile(), state);
     }
 
     public PresalesState loadState(Path wsPath) throws IOException {
-        Path stateFile = wsPath.resolve("state.json");
+        Path stateFile = getStatePath(wsPath).resolve("state.json");
         if (!Files.exists(stateFile)) {
             return null;
         }
@@ -54,26 +63,26 @@ public class PresalesWorkspace {
     }
 
     public void saveCrs(Path wsPath, String content) throws IOException {
-        Files.writeString(wsPath.resolve("crs.md"), content);
+        Files.writeString(getExportPath(wsPath).resolve("crs.md"), content);
     }
 
     public String loadCrs(Path wsPath) throws IOException {
-        return Files.readString(wsPath.resolve("crs.md"));
+        return Files.readString(getExportPath(wsPath).resolve("crs.md"));
     }
 
     public void saveAnalysis(Path wsPath, String content) throws IOException {
-        Files.writeString(wsPath.resolve("analysis.md"), content);
+        Files.writeString(getExportPath(wsPath).resolve("analysis.md"), content);
     }
 
     public void saveQuestions(Path wsPath, String content) throws IOException {
-        Files.writeString(wsPath.resolve("questions.md"), content);
+        Files.writeString(getExportPath(wsPath).resolve("questions.md"), content);
     }
 
     public void saveFinalReport(Path wsPath, String content) throws IOException {
-        Files.writeString(wsPath.resolve("final_report.md"), content);
+        Files.writeString(getExportPath(wsPath).resolve("final_report.md"), content);
     }
 
     public Path getWorkspacePath(String name) {
-        return Paths.get(BASE_DIR, name).toAbsolutePath().normalize();
+        return workspaceProvider.getWorkspacePath(AGENT_NAME, name);
     }
 }

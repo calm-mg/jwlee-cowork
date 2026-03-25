@@ -2,19 +2,22 @@ package io.autocrypt.jwlee.cowork.agents.docsummary;
 
 import io.autocrypt.jwlee.cowork.core.hitl.ApplicationContextHolder;
 import io.autocrypt.jwlee.cowork.core.hitl.NotificationEvent;
-import io.autocrypt.jwlee.cowork.core.tools.CoreFileTools;
+import io.autocrypt.jwlee.cowork.core.tools.CoreWorkspaceProvider;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 @Service
 public class AnkiService {
 
-    private final CoreFileTools fileTools;
+    private final CoreWorkspaceProvider workspaceProvider;
+    private static final String AGENT_NAME = "docsummary";
 
-    public AnkiService(CoreFileTools fileTools) {
-        this.fileTools = fileTools;
+    public AnkiService(CoreWorkspaceProvider workspaceProvider) {
+        this.workspaceProvider = workspaceProvider;
     }
 
     public String generateAnkiCsv(String workspaceName, List<DocSummaryAgent.DefinedTerm> terms) throws IOException {
@@ -23,8 +26,9 @@ public class AnkiService {
             csv.append(escapeCsv(term.term())).append(",").append(escapeCsv(term.definition())).append("\n");
         }
 
-        String filename = String.format("anki/%s_cards_ko.csv", workspaceName);
-        String savedPath = fileTools.saveGeneratedContent(filename, csv.toString());
+        Path exportPath = workspaceProvider.getSubPath(AGENT_NAME, workspaceName, CoreWorkspaceProvider.SubCategory.EXPORT);
+        Path csvFile = exportPath.resolve("anki_cards_ko.csv");
+        Files.writeString(csvFile, csv.toString());
 
         // PUBLISH NOTIFICATION
         ApplicationContextHolder.getPublisher().publishEvent(
@@ -32,7 +36,7 @@ public class AnkiService {
                 String.format("'%s' 문서에서 %d개의 카드가 생성되었습니다.", workspaceName, terms.size()))
         );
 
-        return savedPath;
+        return csvFile.toAbsolutePath().toString();
     }
 
     private String escapeCsv(String text) {

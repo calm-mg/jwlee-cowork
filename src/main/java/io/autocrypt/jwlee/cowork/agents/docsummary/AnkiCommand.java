@@ -9,6 +9,7 @@ import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.ExecutionException;
@@ -32,10 +33,16 @@ public class AnkiCommand {
             @ShellOption(help = "Workspace/Deck name", defaultValue = "anki_default") String wsName,
             @ShellOption(help = "Number of final cards to keep", defaultValue = "30") int maxCards) throws ExecutionException, InterruptedException, IOException {
         
-        Path path = Paths.get(filePath);
+        Path path = Paths.get(filePath).toAbsolutePath().normalize();
+        if (!Files.exists(path)) {
+            return "[Error] File not found: " + path;
+        }
 
         System.out.println("[System] Ingesting document into in-memory RAG for context...");
-        localRagTools.ingestUrlToMemory(path.toString(), wsName);
+        String ingestResult = localRagTools.ingestUrlToMemory(path.toString(), wsName);
+        if (ingestResult.startsWith("ERROR")) {
+            return "[Error] RAG Ingestion failed: " + ingestResult;
+        }
 
         DocSummaryAgent.DocSummaryRequest request = new DocSummaryAgent.DocSummaryRequest(path, wsName, maxCards);
 

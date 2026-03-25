@@ -2,6 +2,7 @@ package io.autocrypt.jwlee.cowork.agents.translate;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +25,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.autocrypt.jwlee.cowork.agents.docsummary.DocSummaryAgent;
 import io.autocrypt.jwlee.cowork.core.hitl.ApplicationContextHolder;
 import io.autocrypt.jwlee.cowork.core.hitl.NotificationEvent;
+import io.autocrypt.jwlee.cowork.core.tools.CoreWorkspaceProvider;
 import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
 import io.autocrypt.jwlee.cowork.core.tools.PdfParser;
 
@@ -157,7 +159,8 @@ public class TranslateAgent {
         // 3. Parse full PDF and chunk elements immediately
         File pdfFile = new File(state.getOriginalPdfPath());
         System.out.println("Parsing full PDF structure...");
-        List<PdfParser.PdfElement> elements = parser.parsePdf(pdfFile, wsPath.resolve("images"));
+        Path imagesPath = wsPath.resolve(CoreWorkspaceProvider.SubCategory.ARTIFACTS.getDirName()).resolve("images");
+        List<PdfParser.PdfElement> elements = parser.parsePdf(pdfFile, imagesPath);
         
         String fullMarkdown = elements.get(0).content();
         List<String> chunks = chunkElements(fullMarkdown);
@@ -299,7 +302,9 @@ public class TranslateAgent {
                     fullText.append(workspace.readTranslatedChunk(wsPath, i)).append("\n\n");
                 }
                 
-                File outputFile = wsPath.resolve("final_translated.md").toFile();
+                Path exportPath = wsPath.resolve(CoreWorkspaceProvider.SubCategory.EXPORT.getDirName());
+                if (!Files.exists(exportPath)) Files.createDirectories(exportPath);
+                File outputFile = exportPath.resolve("final_translated.md").toFile();
                 java.nio.file.Files.writeString(outputFile.toPath(), fullText.toString());
                 
                 state.setCurrentPhase(TranslateWorkspace.TranslateState.Phase.DONE);

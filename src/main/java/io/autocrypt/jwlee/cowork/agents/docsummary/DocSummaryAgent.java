@@ -18,6 +18,7 @@ import com.embabel.agent.api.common.ActionContext;
 import com.embabel.common.ai.model.LlmOptions;
 
 import io.autocrypt.jwlee.cowork.core.tools.CoreFileTools;
+import io.autocrypt.jwlee.cowork.core.tools.CoreWorkspaceProvider;
 import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
 import io.autocrypt.jwlee.cowork.core.tools.PdfParser;
 import io.autocrypt.jwlee.cowork.core.workaround.JsonSafeToolishRag;
@@ -73,14 +74,21 @@ public class DocSummaryAgent {
 
     @Action
     public InitialState start(DocSummaryRequest req, ActionContext ctx) throws IOException {
+        Path filePath = req.filePath().toAbsolutePath().normalize();
+        if (!java.nio.file.Files.exists(filePath)) {
+            throw new java.io.FileNotFoundException("Source file not found: " + filePath);
+        }
+
         Path wsPath = workspace.initWorkspace(req.workspaceName());
         
         String markdown;
-        if (req.filePath().toString().toLowerCase().endsWith(".pdf")) {
-            logToTerminal("Parsing PDF: " + req.filePath());
-            markdown = pdfParser.parsePdfToMarkdown(req.filePath().toFile(), wsPath.resolve("images"));
+        if (filePath.toString().toLowerCase().endsWith(".pdf")) {
+            logToTerminal("Parsing PDF: " + filePath);
+            Path imagesPath = wsPath.resolve(CoreWorkspaceProvider.SubCategory.ARTIFACTS.getDirName()).resolve("images");
+            if (!java.nio.file.Files.exists(imagesPath)) java.nio.file.Files.createDirectories(imagesPath);
+            markdown = pdfParser.parsePdfToMarkdown(filePath.toFile(), imagesPath);
         } else {
-            markdown = fileTools.readFile(req.filePath().toString()).content();
+            markdown = fileTools.readFile(filePath.toString()).content();
         }
 
         logToTerminal("Extracting overview and initial terms...");
