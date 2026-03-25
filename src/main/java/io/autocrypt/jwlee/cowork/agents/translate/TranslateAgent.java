@@ -17,15 +17,12 @@ import com.embabel.agent.api.annotation.RunSubagent;
 import com.embabel.agent.api.annotation.State;
 import com.embabel.agent.api.common.ActionContext;
 import com.embabel.agent.api.common.Ai;
-import com.embabel.agent.core.hitl.WaitFor;
 import com.embabel.agent.prompt.persona.RoleGoalBackstory;
 import com.embabel.common.ai.model.LlmOptions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.autocrypt.jwlee.cowork.agents.anki.AnkiAgent;
 import io.autocrypt.jwlee.cowork.core.hitl.ApplicationContextHolder;
-import io.autocrypt.jwlee.cowork.core.hitl.ApprovalDecision;
-import io.autocrypt.jwlee.cowork.core.hitl.ApprovalRequestedEvent;
 import io.autocrypt.jwlee.cowork.core.hitl.NotificationEvent;
 import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
 import io.autocrypt.jwlee.cowork.core.tools.PdfParser;
@@ -93,7 +90,6 @@ public class TranslateAgent {
 
         System.out.println("Initiating glossary generation via AnkiAgent subagent (Target: 100 terms)...");
         
-        // Prepare AnkiStartRequest for the subagent with 100 cards for deep glossary
         return new AnkiAgent.AnkiStartRequest(
             Path.of(req.pdfPath()),
             req.workspaceName(),
@@ -104,7 +100,6 @@ public class TranslateAgent {
 
     @Action
     public AnkiAgent.AnkiResult runAnkiSubagent(AnkiAgent.AnkiStartRequest req) {
-        // Delegate work to AnkiAgent as a subagent
         return RunSubagent.fromAnnotatedInstance(
             ankiAgent,
             AnkiAgent.AnkiResult.class
@@ -114,12 +109,12 @@ public class TranslateAgent {
     @Action
     public Stage handleAnkiResult(AnkiAgent.AnkiResult result, TranslateStartRequest startReq, Ai ai) throws IOException {
         Path wsPath = workspace.initWorkspace(startReq.workspaceName());
+        TranslateWorkspace.TranslateState state = workspace.loadState(wsPath);
         
-        System.out.println("Processing AnkiAgent result for translation context...");
+        System.out.println("Processing AnkiAgent result and preparing translation chunks...");
         
-        // Format terms as "Term (Translation); Term (Translation)" for the prompt
+        // 1. Prepare glossary
         String formattedGlossary = result.terms().stream().collect(Collectors.joining("; "));
-        
         String prompt = String.format("""
             Based on the following document summary and key terminology, identify the Table of Contents (TOC) if present and common Boilerplate Patterns (headers, footers, etc.).
             
@@ -140,7 +135,6 @@ public class TranslateAgent {
         DocumentContext partialContext = ai.withLlm(LlmOptions.withLlmForRole("normal").withoutThinking())
             .creating(DocumentContext.class).fromPrompt(prompt);
 
-        // Convert the terms list into the map expected by the translator
         Map<String, String> glossaryMap = result.terms().stream().map(t -> {
             int parenIndex = t.lastIndexOf("(");
             if (parenIndex != -1 && t.endsWith(")")) {
@@ -158,7 +152,53 @@ public class TranslateAgent {
             partialContext.boilerplatePatterns()
         );
 
-        return new ReviewGlossaryState(wsPath, docContext, workspace, parser, objectMapper, translatorPersona);
+        // 2. Save glossary for persistence
+        String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(docContext);
+        workspace.saveGlossary(wsPath, json);
+
+        // 3. Parse full PDF and chunk elements immediately
+        File pdfFile = new File(state.getOriginalPdfPath());
+        System.out.println("Parsing full PDF structure...");
+        List<PdfParser.PdfElement> elements = parser.parsePdf(pdfFile, wsPath.resolve("images"));
+        
+        String fullMarkdown = elements.get(0).content();
+        List<String> chunks = chunkElements(fullMarkdown);
+        
+        state.setTotalChunks(chunks.size());
+        state.setCompletedChunks(0);
+        state.setCurrentPhase(TranslateWorkspace.TranslateState.Phase.CHUNK_TRANSLATION);
+        workspace.saveState(wsPath, state);
+
+        for (int i = 0; i < chunks.size(); i++) {
+            workspace.saveTranslatedChunk(wsPath, i + 1000, chunks.get(i));
+        }
+
+        System.out.println("Translation chunks prepared. Starting translation loop...");
+        return new TranslationLoopState(wsPath, docContext, state, workspace, translatorPersona);
+    }
+
+    private List<String> chunkElements(String fullMarkdown) {
+        List<String> chunks = new ArrayList<>();
+        String[] blocks = fullMarkdown.split("\\n{2,}");
+        
+        StringBuilder currentChunk = new StringBuilder();
+        int MAX_CHUNK_CHARS = 5000;
+        
+        for (String block : blocks) {
+            String trimmedBlock = block.trim();
+            if (trimmedBlock.isEmpty()) continue;
+            
+            if (currentChunk.length() + trimmedBlock.length() + 2 > MAX_CHUNK_CHARS && !currentChunk.isEmpty()) {
+                chunks.add(currentChunk.toString().trim());
+                currentChunk.setLength(0);
+            }
+            currentChunk.append(trimmedBlock).append("\n\n");
+        }
+        
+        if (!currentChunk.isEmpty()) {
+            chunks.add(currentChunk.toString().trim());
+        }
+        return chunks;
     }
 
     @Action
@@ -167,9 +207,7 @@ public class TranslateAgent {
             Path wsPath = Path.of(req.workspaceName());
             TranslateWorkspace.TranslateState state = workspace.loadState(wsPath);
             
-            if (state.getCurrentPhase() == TranslateWorkspace.TranslateState.Phase.GLOSSARY_WAITING) {
-                return new FileGlossaryWaitState(wsPath, state, workspace, parser, objectMapper, translatorPersona);
-            } else if (state.getCurrentPhase() == TranslateWorkspace.TranslateState.Phase.CHUNK_TRANSLATION) {
+            if (state.getCurrentPhase() == TranslateWorkspace.TranslateState.Phase.CHUNK_TRANSLATION) {
                 String glossaryJson = workspace.readGlossary(wsPath);
                 DocumentContext ctx = objectMapper.readValue(glossaryJson, DocumentContext.class);
                 return new TranslationLoopState(wsPath, ctx, state, workspace, translatorPersona);
@@ -179,142 +217,6 @@ public class TranslateAgent {
             throw new IllegalStateException("Cannot resume from phase: " + state.getCurrentPhase());
         } catch (Exception e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    @State
-    public record ReviewGlossaryState(Path wsPath, DocumentContext context, TranslateWorkspace workspace, PdfParser parser, ObjectMapper objectMapper, RoleGoalBackstory translatorPersona) implements Stage {
-        @Action
-        public ApprovalDecision waitForFeedback(ActionContext ctx) {
-            String processId = ctx.getProcessContext().getAgentProcess().getId();
-            
-            StringBuilder preview = new StringBuilder();
-            preview.append("**요약(Summary):**\n").append(context.summary()).append("\n\n");
-            preview.append("**용어집(Glossary) 초안:**\n");
-            if (context.glossary() != null) {
-                context.glossary().entrySet().stream()
-                    .limit(50) // Show only first 50 for preview
-                    .forEach(e -> preview.append("- ").append(e.getKey()).append(": ").append(e.getValue()).append("\n"));
-                if (context.glossary().size() > 50) {
-                    preview.append("- ... (and ").append(context.glossary().size() - 50).append(" more)\n");
-                }
-            }
-            preview.append("\n**보일러플레이트 패턴(Boilerplate):**\n");
-            if (context.boilerplatePatterns() != null) {
-                context.boilerplatePatterns().forEach(p -> preview.append("- ").append(p).append("\n"));
-            }
-            
-            ApplicationContextHolder.getPublisher().publishEvent(
-                new ApprovalRequestedEvent(processId, "1차 용어집 검토: 내용을 승인(Y)하거나 추가 수정 지시(N)를 남겨주세요.", preview.toString())
-            );
-            return WaitFor.formSubmission("1차 터미널 피드백 대기", ApprovalDecision.class);
-        }
-
-        @Action(clearBlackboard = true)
-        public Stage processFeedback(ApprovalDecision decision, Ai ai) {
-            try {
-                if (decision.approved()) {
-                    String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(context);
-                    workspace.saveGlossary(wsPath, json);
-                    
-                    TranslateWorkspace.TranslateState state = workspace.loadState(wsPath);
-                    state.setCurrentPhase(TranslateWorkspace.TranslateState.Phase.GLOSSARY_WAITING);
-                    workspace.saveState(wsPath, state);
-
-                    return new FileGlossaryWaitState(wsPath, state, workspace, parser, objectMapper, translatorPersona);
-                } else {
-                    String prompt = String.format("""
-                        사용자 피드백을 반영하여 용어집 및 맥락을 수정하세요.
-                        
-                        # 피드백: %s
-                        
-                        # 이전 맥락:
-                        - 요약: %s
-                        - 용어집: %s
-                        - 보일러플레이트 패턴: %s
-                        
-                        수정된 JSON 결과를 생성하세요.
-                        """, decision.comment(), context.summary(), context.glossary(), context.boilerplatePatterns());
-                    
-                    DocumentContext revised = ai.withLlm(LlmOptions.withLlmForRole("normal").withoutThinking())
-                        .creating(DocumentContext.class).fromPrompt(prompt);
-                    
-                    return new ReviewGlossaryState(wsPath, revised, workspace, parser, objectMapper, translatorPersona);
-                }
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-    }
-
-    @State
-    public record FileGlossaryWaitState(Path wsPath, TranslateWorkspace.TranslateState state, TranslateWorkspace workspace, PdfParser parser, ObjectMapper objectMapper, RoleGoalBackstory translatorPersona) implements Stage {
-        @Action
-        public ApprovalDecision waitForFileEdit(ActionContext ctx) {
-            String processId = ctx.getProcessContext().getAgentProcess().getId();
-            ApplicationContextHolder.getPublisher().publishEvent(
-                new ApprovalRequestedEvent(processId, "2차 파일 검수: " + wsPath.resolve("glossary.json") + " 파일을 편하게 수정하신 후, 완료되면 승인(Y)을 눌러주세요.", "File is ready for manual edit.")
-            );
-            return WaitFor.formSubmission("2차 파일 검수 대기", ApprovalDecision.class);
-        }
-
-        @Action(clearBlackboard = true)
-        public Stage proceed(ApprovalDecision decision) {
-            try {
-                String glossaryJson = workspace.readGlossary(wsPath);
-                DocumentContext context = objectMapper.readValue(glossaryJson, DocumentContext.class);
-                
-                state.setCurrentPhase(TranslateWorkspace.TranslateState.Phase.CHUNK_TRANSLATION);
-                
-                File pdfFile = new File(state.getOriginalPdfPath());
-                System.out.println("Parsing full PDF structure...");
-                List<PdfParser.PdfElement> elements = parser.parsePdf(pdfFile, wsPath.resolve("images"));
-                
-                // Parser returns a single element with type 'markdown'
-                String fullMarkdown = elements.get(0).content();
-                List<String> chunks = chunkElements(fullMarkdown);
-                
-                state.setTotalChunks(chunks.size());
-                state.setCompletedChunks(0);
-                workspace.saveState(wsPath, state);
-
-                for (int i = 0; i < chunks.size(); i++) {
-                    workspace.saveTranslatedChunk(wsPath, i + 1000, chunks.get(i));
-                }
-
-                return new TranslationLoopState(wsPath, context, state, workspace, translatorPersona);
-            } catch (Exception e) {
-                ApplicationContextHolder.getPublisher().publishEvent(
-                    new NotificationEvent("PDF 파싱 실패", "PDF 구조 분석 중 오류가 발생했습니다: " + e.getMessage())
-                );
-                throw new RuntimeException(e);
-            }
-        }
-
-        private List<String> chunkElements(String fullMarkdown) {
-            List<String> chunks = new ArrayList<>();
-            String[] blocks = fullMarkdown.split("\\n{2,}");
-            
-            StringBuilder currentChunk = new StringBuilder();
-            int MAX_CHUNK_CHARS = 5000;
-            
-            for (String block : blocks) {
-                String trimmedBlock = block.trim();
-                if (trimmedBlock.isEmpty()) continue;
-                
-                // +2 for \n\n
-                if (currentChunk.length() + trimmedBlock.length() + 2 > MAX_CHUNK_CHARS && !currentChunk.isEmpty()) {
-                    chunks.add(currentChunk.toString().trim());
-                    currentChunk.setLength(0);
-                }
-                currentChunk.append(trimmedBlock).append("\n\n");
-            }
-            
-            if (!currentChunk.isEmpty()) {
-                chunks.add(currentChunk.toString().trim());
-            }
-            
-            return chunks;
         }
     }
 
