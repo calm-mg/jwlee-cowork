@@ -72,8 +72,7 @@ app:
     baseUrl: https://auto-jira.atlassian.net/wiki
     email: jwlee@autocrypt.io
     apiToken: ${CONFLUENCE_API_TOKEN:}
-    okr-page-id: "2781544496"
-    meeting-root-id: "1778647765"
+    space-key: "camlab"
   jira:
     baseUrl: https://auto-jira.atlassian.net
     projectKey: "VP"

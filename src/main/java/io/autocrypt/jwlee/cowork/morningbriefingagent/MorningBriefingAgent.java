@@ -78,15 +78,11 @@ public class MorningBriefingAgent {
                 .map(i -> new JiraChange(i.key(), i.summary(), "UNKNOWN", i.status(), i.assignee()))
                 .collect(Collectors.toList());
 
-        List<MeetingInfo> meetingUrls = confluenceService.getRecentMeetingUrls();
-        List<MeetingNote> rawNotes = meetingUrls.stream()
-                .limit(3)
-                .map(m -> {
-                    String content = "";
-                    try { content = confluenceService.getPageStorage(m.id()); } catch (Exception ignored) {}
-                    return new MeetingNote(m.title(), content, "System");
-                })
-                .collect(Collectors.toList());
+        ConfluenceService.ConfluencePageInfo reportInfo = confluenceService.getCurrentWeeklyReport();
+        List<MeetingNote> rawNotes = new java.util.ArrayList<>();
+        if (!reportInfo.isEmpty()) {
+            rawNotes.add(new MeetingNote(reportInfo.title(), reportInfo.content(), "System"));
+        }
 
         return new BriefingPreparationState(targetDate, jiraChanges, rawNotes);
     }

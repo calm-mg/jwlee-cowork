@@ -1,13 +1,14 @@
 package io.autocrypt.jwlee.cowork.core.tools;
 
-import io.autocrypt.jwlee.cowork.core.dto.MeetingInfo;
-import io.autocrypt.jwlee.cowork.core.dto.OkrInfo;
-import io.autocrypt.jwlee.cowork.core.dto.TeamReportInfo;
-import java.util.List;
-
 public interface ConfluenceService {
-    OkrInfo getOkr();
-    List<TeamReportInfo> getTeamReports(String meetingUrl);
-    List<MeetingInfo> getRecentMeetingUrls();
+    
+    record ConfluencePageInfo(String id, String title, String content) {
+        public boolean isEmpty() {
+            return content == null || content.isEmpty();
+        }
+    }
+
+    ConfluencePageInfo getCurrentOkr();
+    ConfluencePageInfo getCurrentWeeklyReport();
     String getPageStorage(String pageId);
 }

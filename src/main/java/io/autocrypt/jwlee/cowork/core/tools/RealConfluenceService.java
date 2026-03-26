@@ -1,12 +1,5 @@
 package io.autocrypt.jwlee.cowork.core.tools;
 
-import io.autocrypt.jwlee.cowork.core.dto.MeetingInfo;
-import io.autocrypt.jwlee.cowork.core.dto.OkrInfo;
-import io.autocrypt.jwlee.cowork.core.dto.TeamReportInfo;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
@@ -16,36 +9,30 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @Primary
 public class RealConfluenceService implements ConfluenceService {
 
     private final RestTemplate restTemplate;
+    private final String baseUrl;
+    private final String email;
+    private final String apiToken;
+    private final String spaceKey;
 
-    @Value("${app.confluence.baseUrl:https://auto-jira.atlassian.net/wiki}")
-    private String baseUrl;
-
-    @Value("${app.confluence.email:jwlee@autocrypt.io}")
-    private String email;
-
-    @Value("${app.confluence.apiToken:}")
-    private String apiToken;
-
-    @Value("${app.confluence.okr-page-id:2781544496}")
-    private String okrPageId;
-
-    @Value("${app.confluence.meeting-root-id:1778647765}")
-    private String meetingRootId;
-
-    public RealConfluenceService(RestTemplate restTemplate) {
+    public RealConfluenceService(RestTemplate restTemplate,
+                                 @Value("${app.confluence.baseUrl:https://auto-jira.atlassian.net/wiki}") String baseUrl,
+                                 @Value("${app.confluence.email:jwlee@autocrypt.io}") String email,
+                                 @Value("${app.confluence.apiToken:}") String apiToken,
+                                 @Value("${app.confluence.space-key:camlab}") String spaceKey) {
         this.restTemplate = restTemplate;
-    }
-
-    public String getOkrPageId() {
-        return okrPageId;
+        this.baseUrl = baseUrl;
+        this.email = email;
+        this.apiToken = apiToken;
+        this.spaceKey = spaceKey;
     }
 
     private HttpHeaders createAuthHeaders() {
@@ -60,65 +47,73 @@ public class RealConfluenceService implements ConfluenceService {
 
     @Override
     @SuppressWarnings("unchecked")
-    public OkrInfo getOkr() {
-        if (okrPageId == null || okrPageId.isBlank()) {
-            return new OkrInfo("N/A", List.of("OKR Page ID is not configured."), "N/A");
-        }
+    public ConfluencePageInfo getCurrentOkr() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+        int year = today.getYear();
+        int month = today.getMonthValue();
+        int quarter = (month - 1) / 3 + 1;
+        
+        String targetQuarterStr = String.format("[%d-%dQ]", year, quarter);
 
-        String url = baseUrl + "/api/v2/pages/" + okrPageId + "?body-format=storage";
+        // CQL을 사용하여 제목에 [2026-1Q]가 포함되고 "OKR"이 포함되며 "회고"가 아닌 페이지를 검색 (지정된 스페이스 한정)
+        String cql = "title ~ \"\\\"" + targetQuarterStr + "\\\"\" AND title ~ \"OKR\" AND title !~ \"회고\" AND type = page AND space = \"" + spaceKey + "\"";
+        String url = baseUrl + "/rest/api/content/search?cql=" + cql + "&limit=1";
         HttpEntity<String> entity = new HttpEntity<>(createAuthHeaders());
 
         try {
             ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
             Map<String, Object> responseBody = response.getBody();
-            if (responseBody == null) return new OkrInfo("N/A", List.of(), "Empty Response");
+            if (responseBody == null) return new ConfluencePageInfo("", "", "");
+
+            List<Map<String, Object>> results = (List<Map<String, Object>>) responseBody.get("results");
+            if (results == null || results.isEmpty()) return new ConfluencePageInfo("", "", "");
+
+            // 첫 번째 검색 결과의 페이지 ID 및 제목 추출
+            String pageId = (String) results.get(0).get("id");
+            String title = (String) results.get(0).get("title");
             
-            String title = (String) responseBody.get("title");
-            Map<String, Object> body = (Map<String, Object>) responseBody.get("body");
-            Map<String, Object> storage = (Map<String, Object>) body.get("storage");
-            String html = (String) storage.get("value");
-
-            Document doc = Jsoup.parse(html);
-            List<String> objectives = doc.select("ul li").stream()
-                    .map(Element::text)
-                    .collect(Collectors.toList());
-
-            return new OkrInfo("Current", objectives, title);
+            // 찾은 페이지의 본문 반환
+            return new ConfluencePageInfo(pageId, title, getPageStorage(pageId));
         } catch (Exception e) {
-            return new OkrInfo("Error", List.of(e.getMessage()), "Error");
+            e.printStackTrace();
+            return new ConfluencePageInfo("", "", "");
         }
-    }
-
-    @Override
-    public List<TeamReportInfo> getTeamReports(String meetingUrl) {
-        return List.of();
     }
 
     @Override
     @SuppressWarnings("unchecked")
-    public List<MeetingInfo> getRecentMeetingUrls() {
-        String url = baseUrl + "/api/v2/pages/" + meetingRootId + "/children";
+    public ConfluencePageInfo getCurrentWeeklyReport() {
+        // "주간 팀장회의록"이라는 제목이 포함된 문서 중, 제목 내림차순(최근 날짜순) 또는 생성일 내림차순 정렬 (지정된 스페이스 한정)
+        // 보통 'created desc'를 사용하여 최신에 만들어진 회의록을 우선으로 가져옵니다.
+        String cql = "title ~ \"\\\"주간 팀장회의록\\\"\" AND type = page AND space = \"" + spaceKey + "\" order by created desc";
+        String url = baseUrl + "/rest/api/content/search?cql=" + cql + "&limit=1";
         HttpEntity<String> entity = new HttpEntity<>(createAuthHeaders());
 
         try {
             ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
             Map<String, Object> responseBody = response.getBody();
-            if (responseBody == null) return List.of();
+            if (responseBody == null) return new ConfluencePageInfo("", "", "");
 
             List<Map<String, Object>> results = (List<Map<String, Object>>) responseBody.get("results");
-            if (results == null) return List.of();
+            if (results == null || results.isEmpty()) return new ConfluencePageInfo("", "", "");
 
-            return results.stream()
-                    .map(r -> new MeetingInfo((String) r.get("id"), (String) r.get("title")))
-                    .collect(Collectors.toList());
+            // 첫 번째 검색 결과(가장 최근 회의록)의 페이지 ID 및 제목 추출
+            String pageId = (String) results.get(0).get("id");
+            String title = (String) results.get(0).get("title");
+
+            // 찾은 페이지의 본문 반환
+            return new ConfluencePageInfo(pageId, title, getPageStorage(pageId));
         } catch (Exception e) {
-            return List.of();
+            e.printStackTrace();
+            return new ConfluencePageInfo("", "", "");
         }
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public String getPageStorage(String pageId) {
+        if (pageId == null || pageId.isBlank()) return "";
+        
         String url = baseUrl + "/api/v2/pages/" + pageId + "?body-format=storage";
         HttpEntity<String> entity = new HttpEntity<>(createAuthHeaders());
 
