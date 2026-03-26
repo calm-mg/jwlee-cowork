@@ -73,76 +73,20 @@ export GEMINI_API_KEY="your-api-key"
 
 ## 💡 사용 가능한 에이전트 (Available Agents)
 
-시스템에 기본 탑재되어 즉시 사용 가능한 에이전트들입니다.
+각 에이전트의 상세한 CLI 명령어와 사용 방법은 해당 패키지 디렉토리의 **`USE.md`** 파일을 참조하세요.
 
-### 1. HITL 데모 에이전트
-Human-in-the-Loop 승인 절차가 터미널 환경에서 어떻게 비동기로 동작하는지 확인하는 간단한 데모입니다.
-```bash
-> demo-hitl "가상의 위험한 명령 실행"
-```
+1. **[MorningBriefingAgent](src/main/java/io/autocrypt/jwlee/cowork/agents/morningbriefing/USE.md)**: 어제자 Jira/Confluence 활동 요약 및 오늘 할 일 제안
+2. **[ObsidianAgent](src/main/java/io/autocrypt/jwlee/cowork/agents/obsidian/USE.md)**: Obsidian 일일/주간 노트 생성 및 Git 동기화
+3. **[PresalesAgent](src/main/java/io/autocrypt/jwlee/cowork/agents/presales/USE.md)**: 기술 요구사항 분석 및 제품 Gap 분석
+4. **[TranslateAgent](src/main/java/io/autocrypt/jwlee/cowork/agents/translate/USE.md)**: 기술 문서 PDF 전문 번역
+5. **[DocSummaryAgent](src/main/java/io/autocrypt/jwlee/cowork/agents/docsummary/USE.md)**: 문서 핵심 용어 추출 및 요약
+6. **[AgentGenerationPlanAgent](src/main/java/io/autocrypt/jwlee/cowork/agents/planagent/USE.md)**: 신규 에이전트 DSL 설계 자동화
 
-### 2. PDF 번역 에이전트 (translate)
-PDF 기술 문서를 읽고 전문 용어를 유지하며 마크다운 형식으로 번역합니다.
-- **주요 특징**: PyMuPDF 기반 고성능 파싱, 용어집(Glossary) 자동 추출, 다단계 HITL 검토.
-- **Python 환경 설정 (필수)**:
-  ```bash
-  # 프로젝트 루트에서 실행
-  python3 -m venv .venv
-  source .venv/bin/activate  # Windows: .venv\Scripts\activate
-  pip install -r requirements.txt
-  ```
-- **실행 방법**:
-  ```bash
-  > translate-start --pdf-path "my_doc.pdf" --workspace-name "ws_01"
-  ```
+---
 
-### 3. 프리세일즈 분석 에이전트 (presales)
-고객 요구사항(이메일 등)을 분석하여 기술 요구사항 명세(CRS)를 작성하고, 제품 사양과의 Gap 및 공수(M/M)를 산출합니다.
-- **주요 특징**: 
-    - **다중 RAG 활용**: 기술 표준(`tech-ref`)과 제품 사양(`product-spec`) 지식 베이스를 물리적으로 분리 참조하여 분석 정확도 극대화.
-    - **파일 기반 워크플로우**: 단계별 결과물을 마크다운(`crs.md`, `analysis.md` 등)으로 저장하여 사용자의 직접 검토 및 수정 지원.
-    - **수정 후 재개(Resume)**: 사용자가 기술 요구사항(CRS)을 직접 교정한 뒤, 해당 지점부터 분석을 재실행하여 결과물 갱신 가능.
-- **실행 방법**:
-  ```bash
-  # 1. 지식 베이스 구축 (RAG 인제스트)
-  > presales-ingest --type TECH --path "standards_dir"
-  > presales-ingest --type PRODUCT --path "specs_dir"
+## 🤖 AI를 이용한 에이전트 설계 자동화 (Agent Planning)
 
-  # 2. 분석 시작 (CRS 추출부터 최종 리포트까지 자동 실행)
-  > presales-start --email-path "email.txt" --ws "ws_01"
-
-  # 3. (선택 사항) crs.md 수정 후 분석 결과만 갱신
-  > presales-resume --ws "ws_01"
-  ```
-
-### 4. Anki 카드 생성 에이전트 (anki)
-기술 문서(PDF/Markdown)에서 핵심 용어와 개념을 추출하여 Anki용 CSV 학습 카드를 자동으로 생성합니다.
-- **주요 특징**:
-    - **자동 용어 추출**: 문서 전체를 스캔하여 핵심 기술 용어 및 약어를 추출하고 중복을 제거합니다.
-    - **RAG 기반 국문 정의**: 추출된 용어에 대해 문서의 문맥을 반영한 정확한 국문 정의를 생성합니다.
-    - **검증 루프**: 추출된 용어의 적절성과 번역의 정확도를 LLM이 스스로 검토하는 피드백 과정을 거칩니다.
-- **실행 방법**:
-  ```bash
-  # PDF 또는 마크다운 문서로부터 Anki 카드(CSV) 생성
-  > anki-gen --filePath "document.pdf" --wsName "k8s_study"
-  ```
-
-### 5. Obsidian 노트 관리 에이전트 (obsidian)
-Obsidian 보관소(Vault)와 연동하여 일일/주간 노트를 자동으로 생성하고 관리합니다.
-- **주요 특징**:
-    - **Google Tasks 연동**: Google Tasks의 '일반' 리스트에서 할 일을 가져와 데일리 노트에 포함합니다.
-    - **연속성 유지**: 이전 날짜의 미완료 태스크(`- [ ]`)를 자동으로 추출하여 오늘 할 일로 이관합니다.
-    - **주간 요약**: 한 주(월~금) 동안 작성된 데일리 노트를 분석하여 위클리 리포트를 생성합니다.
-    - **Git 자동 동기화**: 문서 생성 후 Vault의 변경사항을 원격 저장소에 자동으로 커밋 및 푸시합니다.
-    - **안전 장치**: 이미 동일한 날짜나 주차의 문서가 존재할 경우 기존 문서를 덮어쓰지 않고 종료합니다.
-- **실행 방법**:
-  ```bash
-  # 오늘자 데일리 노트 생성
-  > obsidian-daily
-
-  # 이번 주 위클리 노트 생성
-  > obsidian-weekly
-  ```
+에이전트 설계를 자동화하려면 `plan-agent` 명령어를 사용하세요. 상세한 가이드는 **[PlanAgent USE.md](src/main/java/io/autocrypt/jwlee/cowork/agents/planagent/USE.md)**에 기술되어 있습니다.
 
 ---
 

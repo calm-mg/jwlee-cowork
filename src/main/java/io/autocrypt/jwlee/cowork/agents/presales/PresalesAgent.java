@@ -35,12 +35,15 @@ public class PresalesAgent {
 
     public record AnalysisResult(String gapAnalysis, String questions, String finalReport) {}
 
+    // 플래닝 혼선을 방지하기 위한 고유 결과 타입
+    public record CrsResult(String content) {}
+
     /**
      * Phase 1: Refine customer inquiry (email, chat, transcript) into a technical CRS using technical reference RAG.
      */
     @AchievesGoal(description = "Refined CRS in Markdown")
     @Action
-    public String refineRequirements(RequirementRequest req, ActionContext ctx) throws IOException {
+    public CrsResult refineRequirements(RequirementRequest req, ActionContext ctx) throws IOException {
         var techSearch = localRagTools.getOrOpenInstance("tech-ref", req.techRagPath());
         var techRag = new JsonSafeToolishRag("tech_knowledge", "Standard technical specifications and industry knowledge", techSearch);
 
@@ -82,7 +85,8 @@ public class PresalesAgent {
             "techContext", techContext
         ));
 
-        return normalAi.generateText(finalPrompt);
+        String markdown = normalAi.generateText(finalPrompt);
+        return new CrsResult(markdown);
     }
 
     /**
