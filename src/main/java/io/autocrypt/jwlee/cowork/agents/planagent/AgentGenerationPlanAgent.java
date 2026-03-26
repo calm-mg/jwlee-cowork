@@ -1,17 +1,5 @@
 package io.autocrypt.jwlee.cowork.agents.planagent;
 
-import com.embabel.agent.api.annotation.AchievesGoal;
-import com.embabel.agent.api.annotation.Action;
-import com.embabel.agent.api.annotation.Agent;
-import com.embabel.agent.api.common.Ai;
-import com.embabel.common.ai.model.LlmOptions;
-import io.autocrypt.jwlee.cowork.core.prompts.PromptProvider;
-import io.autocrypt.jwlee.cowork.core.tools.CoreFileTools;
-import io.autocrypt.jwlee.cowork.core.tools.CoworkLogger;
-import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
-import io.autocrypt.jwlee.cowork.core.workaround.JsonSafeToolishRag;
-import org.springframework.stereotype.Component;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +10,20 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import org.springframework.stereotype.Component;
+
+import com.embabel.agent.api.annotation.AchievesGoal;
+import com.embabel.agent.api.annotation.Action;
+import com.embabel.agent.api.annotation.Agent;
+import com.embabel.agent.api.common.Ai;
+import com.embabel.common.ai.model.LlmOptions;
+
+import io.autocrypt.jwlee.cowork.core.prompts.PromptProvider;
+import io.autocrypt.jwlee.cowork.core.tools.CoreFileTools;
+import io.autocrypt.jwlee.cowork.core.tools.CoworkLogger;
+import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
+import io.autocrypt.jwlee.cowork.core.workaround.JsonSafeToolishRag;
 
 @Agent(description = "사용자의 요구사항을 분석하여 Embabel Agent DSL을 생성하는 설계 에이전트")
 @Component
@@ -51,7 +53,7 @@ public class AgentGenerationPlanAgent {
         logger.info("PlanAgent", "에이전트 설계 시작: " + req.goal());
 
         String ragName = "agent-design-guides";
-        List<String> fewShots = List.of("guides/embabel-few-shot.md", "guides/spring-shell-few-shot.md");
+        List<String> fewShots = List.of("guides/few-shots/embabel-few-shot.md", "guides/few-shots/spring-shell-few-shot.md");
         List<String> verifiedAgents;
         try (Stream<Path> paths = Files.walk(Paths.get("src/main/java/io/autocrypt/jwlee/cowork/agents"))) {
             verifiedAgents = paths.filter(Files::isRegularFile)
@@ -62,12 +64,12 @@ public class AgentGenerationPlanAgent {
 
         for (String path : fewShots) localRagTools.ingestUrlToMemory(path, ragName);
         for (String path : verifiedAgents) localRagTools.ingestUrlToMemory(path, ragName);
-        localRagTools.ingestUrlToMemory("guides/embabel-0.3.4-full-guide.md", ragName);
+        localRagTools.ingestUrlToMemory("guides/full-docs-only-for-rag/embabel-0.3.4-full-guide.md", ragName);
 
         var searchOps = localRagTools.getOrOpenMemoryInstance(ragName);
         var rag = new JsonSafeToolishRag("embabel_knowledge", "Project patterns and framework guides", searchOps);
 
-        String researchFindings = ai.withLlm(LlmOptions.fromModel("gemini-2.5-flash").withoutThinking())
+        String researchFindings = ai.withLlm(LlmOptions.withLlmForRole("normal").withoutThinking())
                 .withReference(rag)
                 .generateText(promptProvider.getPrompt("agents/planagent/research-patterns.jinja", Map.of(
                     "goal", req.goal(), "features", req.features()

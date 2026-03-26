@@ -2,8 +2,8 @@
 
 > [IMPORTANT] When implementing this agent, you MUST refer to the following guides for ground truth on coding patterns, workarounds, and framework usage:
 > - `guides/DSL_GUIDE.md`: Standard DSL rules and common pitfalls.
-> - `guides/embabel-few-shot.md`: Verified Embabel coding patterns and DTO structures.
-> - `guides/spring-shell-few-shot.md`: Verified CLI command implementation patterns.
+> - `guides/few-shots/embabel-few-shot.md`: Verified Embabel coding patterns and DTO structures.
+> - `guides/few-shots/spring-shell-few-shot.md`: Verified CLI command implementation patterns.
 > - `README.md`: Project-specific directory standards and module architecture.
 
 ## 1. Metadata
