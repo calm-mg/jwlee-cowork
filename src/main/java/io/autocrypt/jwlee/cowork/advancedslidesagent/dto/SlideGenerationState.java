@@ -9,5 +9,6 @@ import io.autocrypt.jwlee.cowork.advancedslidesagent.AdvancedSlidesAgent.Stage;
 @State
 public record SlideGenerationState(
     SlideGenerationRequest request,
-    SlideStructurePlan plan
+    SlideStructurePlan plan,
+    String sourceMaterial
 ) implements Stage {}

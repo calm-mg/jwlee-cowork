@@ -8,8 +8,8 @@ import jakarta.validation.constraints.NotBlank;
 public record SlideGenerationRequest(
     @NotBlank(message = "Workspace ID cannot be empty")
     String workspaceId,
-    @NotBlank(message = "Source material cannot be empty")
-    String sourceMaterial,
+    String sourceString,
+    String sourceFile,
     @NotBlank(message = "Instructions cannot be empty")
     String instructions
 ) {}

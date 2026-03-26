@@ -47,17 +47,35 @@ public class AdvancedSlidesAgent {
     public record SlideMarkdownRaw(String markdownContent) {}
 
     @Action
-    public SlideGenerationState analyzeAndStructure(SlideGenerationRequest request, Ai ai) {
+    public SlideGenerationState analyzeAndStructure(SlideGenerationRequest request, Ai ai) throws IOException {
         logger.info("AdvancedSlides", "Analyzing and structuring slide content for workspace: " + request.workspaceId());
         
+        StringBuilder sourceBuilder = new StringBuilder();
+        if (request.sourceString() != null && !request.sourceString().isBlank()) {
+            sourceBuilder.append(request.sourceString()).append("\n\n");
+        }
+        if (request.sourceFile() != null && !request.sourceFile().isBlank()) {
+            CoreFileTools.FileResult fileResult = fileTools.readFile(request.sourceFile());
+            if ("SUCCESS".equals(fileResult.status())) {
+                sourceBuilder.append(fileResult.content());
+            } else {
+                logger.error("AdvancedSlides", "Failed to read source file: " + request.sourceFile());
+            }
+        }
+        
+        String sourceMaterial = sourceBuilder.toString().trim();
+        if (sourceMaterial.isEmpty()) {
+            throw new IllegalArgumentException("Source material is empty. Provide sourceString or sourceFile.");
+        }
+
         SlideStructurePlan plan = ai.withLlmByRole("normal")
                 .rendering("agents/advancedslides/analyze-structure")
                 .createObject(SlideStructurePlan.class, Map.of(
-                        "sourceMaterial", request.sourceMaterial(),
+                        "sourceMaterial", sourceMaterial,
                         "instructions", request.instructions()
                 ));
 
-        return new SlideGenerationState(request, plan);
+        return new SlideGenerationState(request, plan, sourceMaterial);
     }
 
     @AchievesGoal(description = "Generates final Obsidian Advanced Slides markdown and saves it to the export directory")
@@ -73,7 +91,7 @@ public class AdvancedSlidesAgent {
         String markdownContent = ai.withLlmByRole("performant")
                 .rendering("agents/advancedslides/generate-markdown")
                 .generateText(Map.of(
-                        "sourceMaterial", state.request().sourceMaterial(),
+                        "sourceMaterial", state.sourceMaterial(),
                         "instructions", state.request().instructions(),
                         "outline", state.plan().outline(),
                         "slideGuidelines", slideGuidelines
