@@ -62,8 +62,6 @@ The core logic blocks.
   - **NEVER return generic types** like `String`, `Boolean`, or `List<String>` in `@AchievesGoal`. This causes planning ambiguity (Stuck state) because the planner cannot distinguish between different agents' results.
   - Even if the output is just a Markdown string, wrap it in a unique Record (e.g., `record MorningBriefingReport(String content) {}`).
 - **Input**: The DTO or State required to trigger this action.
-...
-
 - **Output**: The DTO or State returned. Use `WaitFor.formSubmission([DTO].class)` for HITL.
 - **LLM Configuration**:
   - `role`: simple | normal | performant
