@@ -11,8 +11,7 @@ source /home/jwlee/workspace/jwlee-cowork/.envrc
 # Spring Shell 명령어를 비대화형(Non-interactive) 모드로 실행
 export SPRING_PROFILES_INCLUDE=cron
 
-# 1번 인자로 daily 또는 weekly를 받도록 구성
-COMMAND=$1
+COMMAND="$@"
 ./mvnw clean spring-boot:run \
   -Dspring-boot.run.arguments="$COMMAND" \
-  >> /home/jwlee/.obsidian-cron.log 2>&1
+  2>&1 | tee -a /home/jwlee/.obsidian-cron.log
