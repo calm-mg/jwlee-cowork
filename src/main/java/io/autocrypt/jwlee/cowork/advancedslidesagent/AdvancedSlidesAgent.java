@@ -5,6 +5,7 @@ import com.embabel.agent.api.annotation.AchievesGoal;
 import com.embabel.agent.api.annotation.EmbabelComponent;
 import com.embabel.agent.api.common.ActionContext;
 import com.embabel.agent.api.common.Ai;
+import com.embabel.common.ai.model.LlmOptions;
 import io.autocrypt.jwlee.cowork.advancedslidesagent.dto.*;
 import io.autocrypt.jwlee.cowork.core.tools.CoreFileTools;
 import io.autocrypt.jwlee.cowork.core.tools.CoreWorkspaceProvider;
@@ -68,12 +69,18 @@ public class AdvancedSlidesAgent {
             throw new IllegalArgumentException("Source material is empty. Provide sourceString or sourceFile.");
         }
 
-        SlideStructurePlan plan = ai.withLlmByRole("normal")
+        String outline = ai.withLlmByRole("normal")
                 .rendering("agents/advancedslides/analyze-structure")
-                .createObject(SlideStructurePlan.class, Map.of(
+                .generateText(Map.of(
                         "sourceMaterial", sourceMaterial,
                         "instructions", request.instructions()
                 ));
+
+        SlideCount slideCountObj = ai.withLlmByRole("simple")
+                .rendering("agents/advancedslides/count-slides")
+                .createObject(SlideCount.class, Map.of("outline", outline));
+
+        SlideStructurePlan plan = new SlideStructurePlan(slideCountObj.count(), outline);
 
         return new SlideGenerationState(request, plan, sourceMaterial);
     }
@@ -88,7 +95,7 @@ public class AdvancedSlidesAgent {
         String slideGuidelines = guidelinesResult.status().equals("SUCCESS") ? guidelinesResult.content() : "";
 
         // 2. Call LLM to generate markdown
-        String markdownContent = ai.withLlmByRole("performant")
+        String markdownContent = ai.withLlm(LlmOptions.withLlmForRole("performant").withMaxTokens(65536))
                 .rendering("agents/advancedslides/generate-markdown")
                 .generateText(Map.of(
                         "sourceMaterial", state.sourceMaterial(),

@@ -10,6 +10,7 @@ embabel:
     platform:
       ranking:
         llm: gemini-2.5-flash-lite
+        max-attempts: 5
       models:
         googlegenai:
           api-key: ${GEMINI_API_KEY}

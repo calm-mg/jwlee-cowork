@@ -24,8 +24,11 @@ logging:
 embabel:
   agent:
     platform:
+      http-client:
+        read-timeout: 180s
       llm-operations:
-        timeout-seconds: 300
+        prompts:
+          default-timeout: 180s
         data-binding:
           max-attempts: 15
       models:
@@ -48,7 +51,6 @@ embabel:
         dir: target/lucene-index
       import:
         dir: knowledge
-
 
 presentation:
   output:

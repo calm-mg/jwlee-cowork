@@ -7,12 +7,7 @@
 
 ### 실행 명령어
 ```bash
-slides --workspaceId agent-showcase --source "Hands-on Agentic AI:
-- 각종 Agent.java 파일을 살핀 뒤, 해당 파일들에서 발견되는 주요 패턴들을 DSL_GUIDE.md 에서 식별한 패턴들 및 주의사항을 포함해서 Hands-on 이 될 수 있도록 교육하는 것이 목적임
-- 프롬프트 엔지니어링과 프롬프트 evaluation 강조: Separating Logic (Java) from Vibe (Jinja/Markdown)
-- 도구 연동 및 Toolish Rag, Agent As A Tool(혹은 결정론적 SubAgent 활용)등 Agentic AI Pattern 을 강조해야 함
-- Live Demo: Plan-to-Code workflow with AgentGenerationPlanAgent <- 상세설명을 할 필요는 없음. 데모를 개시한다는 페이지만 있으면 됨" \
--instructions "개발자 대상의 전문적인 기술 세션입니다. Obsidian Advanced Slides의 Grid Layout과 Font Awesome 아이콘을 적극 활용하고, 아키텍처의 견고함을 강조하는 스타일로 만들어주세요. 발표자료는 한국어로 작성되어야 합니다."
+slides --workspaceId agent-hands-on --source-file SOURCE.md --instructions "개발자 대상의 기술 세션입니다. 코드 블록의 [line highlighting] 기능을 사용하여 Java 에이전트의 구조를 상세히 설명해주세요. 각 에이전트 섹션 뒤의 [Simulation] 결과를 별도 슬라이드로 구성하여 시각적인 효과를 극대화하고, Font Awesome 아이콘을 사용하여 텍스트 위주의 슬라이드를 피해주세요. 모든 설명은 한국어로 작성하며 전문적인 톤을 유지하십시오."
 ```
 
 ---
