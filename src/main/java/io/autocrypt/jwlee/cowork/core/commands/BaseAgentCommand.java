@@ -5,9 +5,12 @@ import com.embabel.agent.core.AgentPlatform;
 import com.embabel.agent.core.AgentProcess;
 import com.embabel.agent.core.ProcessOptions;
 import com.embabel.agent.core.Verbosity;
+import io.autocrypt.jwlee.cowork.core.tools.CoworkLogger;
 
 import java.util.Collections;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * Base class for Spring Shell commands that invoke Embabel agents.
@@ -15,14 +18,12 @@ import java.util.concurrent.ExecutionException;
 public abstract class BaseAgentCommand {
 
     protected final AgentPlatform agentPlatform;
+    private AgentProcess lastProcess; // 마지막 실행 프로세스 보관
 
     protected BaseAgentCommand(AgentPlatform agentPlatform) {
         this.agentPlatform = agentPlatform;
     }
 
-    /**
-     * Helper to create ProcessOptions with verbosity settings.
-     */
     protected ProcessOptions getOptions(boolean showPrompts, boolean showResponses) {
         return ProcessOptions.DEFAULT.withVerbosity(new Verbosity()
                 .withShowPrompts(showPrompts)
@@ -31,7 +32,7 @@ public abstract class BaseAgentCommand {
 
     /**
      * Helper to invoke an agent with consistent process handling and options.
-     * Explicitly handles 0-10 arguments to prevent Java varargs wrapping issues.
+     * Replaces invokeAgentProcess to maintain backward compatibility.
      */
     protected <T> T invokeAgent(Class<T> resultType, ProcessOptions options, Object... requests) 
             throws ExecutionException, InterruptedException {
@@ -39,10 +40,9 @@ public abstract class BaseAgentCommand {
         var invocation = AgentInvocation.create(agentPlatform, resultType)
                 .withProcessOptions(options);
 
-        AgentProcess process;
         int len = (requests == null) ? 0 : requests.length;
 
-        process = switch (len) {
+        lastProcess = switch (len) {
             case 0 -> invocation.runAsync(Collections.emptyMap()).get();
             case 1 -> invocation.runAsync(requests[0]).get();
             case 2 -> invocation.runAsync(requests[0], requests[1]).get();
@@ -54,13 +54,32 @@ public abstract class BaseAgentCommand {
             case 8 -> invocation.runAsync(requests[0], requests[1], requests[2], requests[3], requests[4], requests[5], requests[6], requests[7]).get();
             case 9 -> invocation.runAsync(requests[0], requests[1], requests[2], requests[3], requests[4], requests[5], requests[6], requests[7], requests[8]).get();
             case 10 -> invocation.runAsync(requests[0], requests[1], requests[2], requests[3], requests[4], requests[5], requests[6], requests[7], requests[8], requests[9]).get();
-            default -> throw new IllegalArgumentException("에이전트 인자가 너무 많습니다 (최대 10개). 현재 인자 수: " + len);
+            default -> throw new IllegalArgumentException("Too many arguments.");
         };
 
-        while (!process.getFinished()) {
+        while (!lastProcess.getFinished()) {
             Thread.sleep(500);
         }
+        return lastProcess.resultOfType(resultType);
+    }
 
-        return process.resultOfType(resultType);
+    /**
+     * Report metrics of the last executed process.
+     */
+    protected void reportOverallMetrics(CoworkLogger logger, String prefix) {
+        if (lastProcess == null) return;
+
+        // 총 비용 및 사용량
+        logger.info(prefix, "[Total Process Metrics]\n" + lastProcess.costInfoString(true));
+
+        // 완료된 액션 히스토리
+        var history = lastProcess.getHistory();
+        String historyLog = IntStream.range(0, history.size())
+                .mapToObj(i -> String.format("%d. %s (%.1fs)", 
+                        i + 1, 
+                        history.get(i).getActionName(), 
+                        history.get(i).getRunningTime().toMillis() / 1000.0))
+                .collect(Collectors.joining("\n"));
+        logger.info(prefix, "[Action Sequence]\n" + historyLog);
     }
 }

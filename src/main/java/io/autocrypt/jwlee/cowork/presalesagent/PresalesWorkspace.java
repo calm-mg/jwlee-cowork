@@ -70,14 +70,6 @@ public class PresalesWorkspace {
         return Files.readString(getExportPath(wsPath).resolve("crs.md"));
     }
 
-    public void saveAnalysis(Path wsPath, String content) throws IOException {
-        Files.writeString(getExportPath(wsPath).resolve("analysis.md"), content);
-    }
-
-    public void saveQuestions(Path wsPath, String content) throws IOException {
-        Files.writeString(getExportPath(wsPath).resolve("questions.md"), content);
-    }
-
     public void saveFinalReport(Path wsPath, String content) throws IOException {
         Files.writeString(getExportPath(wsPath).resolve("final_report.md"), content);
     }

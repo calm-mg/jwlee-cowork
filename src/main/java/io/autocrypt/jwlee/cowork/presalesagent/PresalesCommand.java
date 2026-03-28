@@ -4,6 +4,7 @@ import com.embabel.agent.api.common.Ai;
 import com.embabel.agent.core.AgentPlatform;
 import io.autocrypt.jwlee.cowork.core.commands.BaseAgentCommand;
 import io.autocrypt.jwlee.cowork.core.tools.CoreWorkspaceProvider;
+import io.autocrypt.jwlee.cowork.core.tools.CoworkLogger;
 import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
@@ -22,16 +23,18 @@ public class PresalesCommand extends BaseAgentCommand {
     private final LocalRagTools ragTools;
     private final Ai ai;
     private final CoreWorkspaceProvider workspaceProvider;
+    private final CoworkLogger coworkLogger;
     private static final String AGENT_NAME = "presales";
 
     public PresalesCommand(PresalesAgent agent, PresalesWorkspace workspace, LocalRagTools ragTools, 
-                          Ai ai, AgentPlatform agentPlatform, CoreWorkspaceProvider workspaceProvider) {
+                          Ai ai, AgentPlatform agentPlatform, CoreWorkspaceProvider workspaceProvider, CoworkLogger coworkLogger) {
         super(agentPlatform);
         this.agent = agent;
         this.workspace = workspace;
         this.ragTools = ragTools;
         this.ai = ai;
         this.workspaceProvider = workspaceProvider;
+        this.coworkLogger = coworkLogger;
     }
 
     @ShellMethod(value = "Ingest documents into presales RAG indices.", key = "presales-ingest")
@@ -67,12 +70,14 @@ public class PresalesCommand extends BaseAgentCommand {
         // 2. Phase 1: Refine Requirements
         System.out.println("Phase 1: Refining requirements using tech-ref RAG at " + techRagPath);
         
-        String crs = invokeAgent(
-                String.class,
+        PresalesAgent.CrsResult crsResult = invokeAgent(
+                PresalesAgent.CrsResult.class,
                 getOptions(p, r),
                 new PresalesAgent.RequirementRequest(sourceContent, techRagPath)
         );
-        
+        reportOverallMetrics(coworkLogger, "Phase1-Refine");
+
+        String crs = crsResult.content();
         workspace.saveCrs(wsPath, crs);
 
         // 3. Save State (RAG 경로 저장)
@@ -116,9 +121,8 @@ public class PresalesCommand extends BaseAgentCommand {
                 getOptions(p, r),
                 new PresalesAgent.GapAnalysisRequest(crs, language, productRagPath)
         );
+        reportOverallMetrics(coworkLogger, "Phase2-GapAnalysis");
 
-        workspace.saveAnalysis(wsPath, result.gapAnalysis());
-        workspace.saveQuestions(wsPath, result.questions());
         workspace.saveFinalReport(wsPath, result.finalReport());
 
         // Update state to COMPLETED
@@ -137,8 +141,6 @@ public class PresalesCommand extends BaseAgentCommand {
             ✅ Analysis Completed!
             Workspace: %s
             - CRS: crs.md
-            - Analysis: analysis.md
-            - Questions: questions.md
             - Final Report: final_report.md
             
             Results saved in: %s
