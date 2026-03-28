@@ -37,22 +37,24 @@ public class LuceneRagConfiguration {
         }
 
         Path indexPath = Paths.get(luceneIndexDir);
+        boolean isExistingIndex = false;
         if (Files.exists(indexPath) && Files.isDirectory(indexPath)) {
             try (var stream = Files.list(indexPath)) {
-                boolean hasSegments = stream.anyMatch(p -> p.getFileName().toString().startsWith("segments"));
-                if (!hasSegments) {
+                isExistingIndex = stream.anyMatch(p -> p.getFileName().toString().startsWith("segments"));
+                if (!isExistingIndex) {
                     // Invalid index (e.g., empty dir or interrupted initialization), clear it to allow fresh start
                     deleteRecursively(indexPath);
                 }
             }
         }
 
-        return LuceneSearchOperations
+        var builder = LuceneSearchOperations
                 .withName("rca-knowledge")
                 .withEmbeddingService(embeddingService)
                 .withIndexPath(indexPath)
-                .withChunkTransformer(AddTitlesChunkTransformer.INSTANCE)
-                .buildAndLoadChunks();
+                .withChunkTransformer(AddTitlesChunkTransformer.INSTANCE);
+
+        return isExistingIndex ? builder.buildAndLoadChunks() : builder.build();
     }
 
     private void deleteRecursively(Path path) throws IOException {

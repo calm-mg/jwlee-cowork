@@ -54,7 +54,7 @@ public class LocalRagTools {
                 .withName(ragName)
                 .withEmbeddingService(embeddingService)
                 .withChunkTransformer(AddTitlesChunkTransformer.INSTANCE)
-                .buildAndLoadChunks();
+                .build();
 
         activeInstances.put(key, lucene);
         return lucene;
@@ -79,12 +79,20 @@ public class LocalRagTools {
         Files.createDirectories(indexPath);
         var embeddingService = modelProvider.getEmbeddingService(ModelSelectionCriteria.getAuto());
         
-        var lucene = LuceneSearchOperations
+        var builder = LuceneSearchOperations
                 .withName(ragName)
                 .withEmbeddingService(embeddingService)
                 .withIndexPath(indexPath)
-                .withChunkTransformer(AddTitlesChunkTransformer.INSTANCE)
-                .buildAndLoadChunks();
+                .withChunkTransformer(AddTitlesChunkTransformer.INSTANCE);
+        
+        boolean isExistingIndex = false;
+        if (Files.exists(indexPath)) {
+            try (var stream = Files.list(indexPath)) {
+                isExistingIndex = stream.anyMatch(p -> p.getFileName().toString().startsWith("segments"));
+            }
+        }
+        
+        var lucene = isExistingIndex ? builder.buildAndLoadChunks() : builder.build();
         
         activeInstances.put(key, lucene);
         return lucene;
