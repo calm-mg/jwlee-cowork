@@ -12,6 +12,7 @@ import com.embabel.agent.api.annotation.Agent;
 import com.embabel.agent.api.common.ActionContext;
 import com.embabel.agent.api.common.workflow.loop.RepeatUntilAcceptableBuilder;
 import com.embabel.agent.api.common.workflow.loop.TextFeedback;
+import com.embabel.common.ai.model.LlmOptions;
 
 import io.autocrypt.jwlee.cowork.core.prompts.PromptProvider;
 import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
@@ -149,6 +150,4 @@ public class PresalesAgent {
 
         return new AnalysisResult(rawAnalysis, questions, finalReport);
     }
-}
- }
 }

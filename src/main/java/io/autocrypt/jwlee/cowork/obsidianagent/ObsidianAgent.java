@@ -1,21 +1,5 @@
 package io.autocrypt.jwlee.cowork.obsidianagent;
 
-import com.embabel.agent.api.annotation.AchievesGoal;
-import com.embabel.agent.api.annotation.Action;
-import com.embabel.agent.api.annotation.Agent;
-import com.embabel.agent.api.common.ActionContext;
-import com.embabel.agent.api.common.Ai;
-
-import io.autocrypt.jwlee.cowork.core.hitl.ApplicationContextHolder;
-import io.autocrypt.jwlee.cowork.core.hitl.NotificationEvent;
-import io.autocrypt.jwlee.cowork.core.prompts.PromptProvider;
-import io.autocrypt.jwlee.cowork.core.tools.CoreFileTools;
-import io.autocrypt.jwlee.cowork.core.tools.CoworkLogger;
-import io.autocrypt.jwlee.cowork.core.tools.GitTools;
-import io.autocrypt.jwlee.cowork.core.tools.GoogleServiceTools;
-import io.autocrypt.jwlee.cowork.core.tools.ObsidianTools;
-import org.springframework.stereotype.Component;
-
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -25,6 +9,24 @@ import java.time.temporal.WeekFields;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import org.springframework.stereotype.Component;
+
+import com.embabel.agent.api.annotation.AchievesGoal;
+import com.embabel.agent.api.annotation.Action;
+import com.embabel.agent.api.annotation.Agent;
+import com.embabel.agent.api.common.ActionContext;
+import com.embabel.agent.api.common.Ai;
+import com.embabel.common.ai.model.LlmOptions;
+
+import io.autocrypt.jwlee.cowork.core.hitl.ApplicationContextHolder;
+import io.autocrypt.jwlee.cowork.core.hitl.NotificationEvent;
+import io.autocrypt.jwlee.cowork.core.prompts.PromptProvider;
+import io.autocrypt.jwlee.cowork.core.tools.CoreFileTools;
+import io.autocrypt.jwlee.cowork.core.tools.CoworkLogger;
+import io.autocrypt.jwlee.cowork.core.tools.GitTools;
+import io.autocrypt.jwlee.cowork.core.tools.GoogleServiceTools;
+import io.autocrypt.jwlee.cowork.core.tools.ObsidianTools;
 
 @Agent(description = "Manages Obsidian Daily and Weekly notes with Git synchronization.")
 @Component
