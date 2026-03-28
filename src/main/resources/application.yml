@@ -73,7 +73,7 @@ app:
   confluence:
     baseUrl: https://auto-jira.atlassian.net/wiki
     email: jwlee@autocrypt.io
-    apiToken: ${CONFLUENCE_API_TOKEN:}
+    apiToken: ${ATLASSIAN_API_TOKEN:}
     space-key: "camlab"
   jira:
     baseUrl: https://auto-jira.atlassian.net

@@ -1,21 +1,12 @@
-CRON_TZ=Asia/Seoul
+# KST 기준 매일 오전 6시 00분에 스크립트 실행    
+00 06 * * * direnv exec /home/jwlee/workspace/jwlee-cowork /home/jwlee/workspace/jwlee-cowork/.venv/bin/python /home
+    
+# KST 기준 평일 오전 5시 30분에 데일리 노트 생성    
+30 05 * * 1-5 /home/jwlee/scripts/jwlee-cowork.sh obsidian-daily    
+    
+# KST 기준 토요일 오전 7시 00분에 위클리 노트 생성    
+00 07 * * 6 /home/jwlee/scripts/jwlee-cowork.sh obsidian-weekly        
+                                                            
+# KST 기준 평일 오전 5시 45분에 모닝 브리핑 생성    
+45 05 * * 1-5 /home/jwlee/scripts/jwlee-cowork.sh morning-briefing    
 
-# =================================================================
-# Jira 이슈 추출기를 위한 환경 변수
-# =================================================================
-JIRA_API_TOKEN=''
-JIRA_GETTER_SLACK_WEBHOOK_URL=''
-SMTP_USER=''
-SMTP_PASSWORD=''
-
-# =================================================================
-# Cron 작업 스케줄
-# =================================================================
-# KST 기준 매일 오전 6시 00분(UTC 21:00)에 스크립트 실행
-00 06 * * * /home/jwlee/workspace/jira-issue-getter/venv/bin/python /home/jwlee/workspace/jira-issue-getter/jira-issue-getter.py >> /tmp/jira-getter.log 2>&1
-
-# KST 기준 평일 오전 6시 30분에 데일리 노트 생성
-30 06 * * 1-5 /home/jwlee/scripts/jwlee-cowork.sh obsidian-daily
-
-# KST 기준 평일 오전 7시 00분에 위클리 노트 생성
-00 07 * * 6 /home/jwlee/scripts/jwlee-cowork.sh obsidian-weekly
