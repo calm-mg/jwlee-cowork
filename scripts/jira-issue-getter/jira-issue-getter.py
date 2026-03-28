@@ -21,7 +21,7 @@ if not RAW_TOKEN or not TEAMS_WEBHOOK_URL:
 auth_str = f"{ATLASSIAN_EMAIL}:{RAW_TOKEN}"
 TOKEN = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
 
-TEAMS_NOTIFY_ON_SUCCESS = True # True로 설정하면 스크립트 성공 시에도 알림을 보냅니다
+TEAMS_NOTIFY_ON_SUCCESS = False # True로 설정하면 스크립트 성공 시에도 알림을 보냅니다
 DEBUG_MODE = False # True로 설정하면 각 연도의 첫 번째 이슈 데이터를 JSON 형식으로 출력합니다
 TARGET_YEARS = [2026]
 MULTIPLIER = 1.0
