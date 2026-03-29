@@ -173,9 +173,15 @@ public class RealConfluenceService implements ConfluenceService {
         int limit = request.limit() > 0 ? request.limit() : 3;
         if (limit > 5) limit = 5; // LLM 토큰 보호를 위해 최대 5개로 강제
 
-        // 1. 기본 검색 조건 (스페이스 한정 + 페이지 타입 + 텍스트 키워드 검색)
+        // 1. 기본 검색 조건
         StringBuilder cqlBuilder = new StringBuilder();
         cqlBuilder.append("type = page AND space = \"").append(spaceKey).append("\"");
+        
+        // 특정 페이지의 하위 페이지만 검색할 경우 (ancestor 필터)
+        if (request.ancestorId() != null && !request.ancestorId().isBlank()) {
+            cqlBuilder.append(" AND ancestor = ").append(request.ancestorId());
+        }
+
         cqlBuilder.append(" AND text ~ \"\\\"").append(request.keyword()).append("\\\"\"");
 
         // 2. 제외 키워드 (선택)
@@ -183,7 +189,7 @@ public class RealConfluenceService implements ConfluenceService {
             cqlBuilder.append(" AND text !~ \"\\\"").append(request.excludeKeyword()).append("\\\"\"");
         }
 
-        // 3. 날짜 필터 (선택) - 최신 정보 검색을 위한 시작일
+        // 3. 날짜 필터 (선택)
         if (request.fromDate() != null && !request.fromDate().isBlank()) {
             cqlBuilder.append(" AND lastModified >= \"").append(request.fromDate()).append("\"");
         }
@@ -191,13 +197,19 @@ public class RealConfluenceService implements ConfluenceService {
         // 최신순 정렬
         cqlBuilder.append(" order by lastModified desc");
 
-        String url = baseUrl + "/rest/api/content/search?cql=" + cqlBuilder.toString() + "&limit=" + limit;
+        // 4. URI 객체 사용 (이중 인코딩 방지)
+        java.net.URI uri = org.springframework.web.util.UriComponentsBuilder.fromHttpUrl(baseUrl + "/rest/api/content/search")
+                .queryParam("cql", cqlBuilder.toString())
+                .queryParam("limit", limit)
+                .build()
+                .toUri();
+
         HttpEntity<String> entity = new HttpEntity<>(createAuthHeaders());
         
         List<ConfluencePageInfo> resultPages = new ArrayList<>();
 
         try {
-            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
+            ResponseEntity<Map> response = restTemplate.exchange(uri, HttpMethod.GET, entity, Map.class);
             Map<String, Object> responseBody = response.getBody();
             if (responseBody == null) return List.of();
 

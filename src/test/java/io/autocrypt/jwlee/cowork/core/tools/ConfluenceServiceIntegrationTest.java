@@ -57,6 +57,7 @@ class ConfluenceServiceIntegrationTest extends BaseIntegrationTest {
                 "조직 OKR", // keyword
                 "회고",      // excludeKeyword
                 "2025-01-01",// fromDate
+                null,        // ancestorId
                 3            // limit
         );
 
