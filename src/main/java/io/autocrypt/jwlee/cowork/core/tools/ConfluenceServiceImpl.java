@@ -19,7 +19,7 @@ import java.util.*;
 
 @Service
 @Primary
-public class RealConfluenceService implements ConfluenceService {
+public class ConfluenceServiceImpl implements ConfluenceService {
 
     private final RestTemplate restTemplate;
     private final String baseUrl;
@@ -27,7 +27,7 @@ public class RealConfluenceService implements ConfluenceService {
     private final String apiToken;
     private final String spaceKey;
 
-    public RealConfluenceService(RestTemplate restTemplate,
+    public ConfluenceServiceImpl(RestTemplate restTemplate,
                                  @Value("${app.confluence.baseUrl:https://auto-jira.atlassian.net/wiki}") String baseUrl,
                                  @Value("${app.confluence.email:jwlee@autocrypt.io}") String email,
                                  @Value("${app.confluence.apiToken:}") String apiToken,

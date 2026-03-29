@@ -8,7 +8,7 @@ import io.autocrypt.jwlee.cowork.core.dto.MeetingInfo;
 import io.autocrypt.jwlee.cowork.weeklyagent.dto.RawWeeklyData;
 import io.autocrypt.jwlee.cowork.core.tools.ConfluenceService;
 import io.autocrypt.jwlee.cowork.core.tools.JiraService;
-import io.autocrypt.jwlee.cowork.core.tools.RealConfluenceService;
+import io.autocrypt.jwlee.cowork.core.tools.ConfluenceServiceImpl;
 import io.autocrypt.jwlee.cowork.core.commands.BaseAgentCommand;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
