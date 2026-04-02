@@ -136,6 +136,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
+                    <parameters>true</parameters>
                     <excludes>
                         <exclude>io/autocrypt/jwlee/cowork/agents/sample/**</exclude>
                         <exclude>io/autocrypt/jwlee/cowork/agents/scaffold/**</exclude>

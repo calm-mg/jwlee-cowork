@@ -135,7 +135,7 @@ public class OpsAgent {
             "evidence", truncate(evidenceDump, 60000)
         ));
 
-        return ai.withLlm(LlmOptions.withLlmForRole("performant").withoutThinking().withMaxTokens(16384))
+        return ai.withLlm(LlmOptions.withLlmForRole("performant").withoutThinking().withMaxTokens(65536))
                 .creating(OpsCategorizationState.class)
                 .fromPrompt(prompt);
     }

@@ -1,6 +1,7 @@
 package io.autocrypt.jwlee.cowork.core.tools;
 
 import com.embabel.agent.api.annotation.LlmTool;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
@@ -16,18 +17,30 @@ import java.util.stream.Collectors;
 @Component
 public class GrepTool {
 
+    private final CoworkLogger logger;
+
+    public GrepTool(CoworkLogger logger) {
+        this.logger = logger;
+    }
+
     @LlmTool(description = "Searches for a regex pattern in the codebase. " +
             "Returns matching lines with file paths.")
     public List<String> grep(
             @LlmTool.Param(description = "The regex pattern to search for.") String pattern,
-            @LlmTool.Param(description = "The directory or file to search in (default is current directory).") String includePath
+            @Nullable @LlmTool.Param(description = "The directory or file to search in. Defaults to '.' (current directory) if not provided.") String includePath
     ) {
-        String searchDir = (includePath == null || includePath.isEmpty()) ? "." : includePath;
+        // Handle cases where includePath might be null or missing due to reflection mapping issues
+        String searchDir = (includePath == null || includePath.trim().isEmpty()) ? "." : includePath;
+        
+        // Sanitize pattern to prevent command injection
+        String sanitizedPattern = pattern.replace("\"", "\\\"");
+        
+        logger.info("GrepTool", "Searching for pattern: " + sanitizedPattern + " in " + searchDir);
         
         // Try ripgrep first, then grep
-        List<String> results = runCommand("rg -n --no-heading --fixed-strings \"" + pattern + "\" " + searchDir);
+        List<String> results = runCommand("rg -n --no-heading --fixed-strings \"" + sanitizedPattern + "\" " + searchDir);
         if (results == null || results.isEmpty()) {
-            results = runCommand("grep -rnE \"" + pattern + "\" " + searchDir);
+            results = runCommand("grep -rnE \"" + sanitizedPattern + "\" " + searchDir);
         }
         
         return results != null ? results : new ArrayList<>();
