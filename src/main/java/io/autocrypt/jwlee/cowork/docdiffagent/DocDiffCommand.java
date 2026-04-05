@@ -10,6 +10,7 @@ import java.util.concurrent.ExecutionException;
 
 /**
  * Spring Shell command for DocDiffAgent.
+ * Performs deep-dive structural analysis and technical audit.
  */
 @ShellComponent
 public class DocDiffCommand extends BaseAgentCommand {
@@ -18,7 +19,7 @@ public class DocDiffCommand extends BaseAgentCommand {
         super(agentPlatform);
     }
 
-    @ShellMethod(key = "doc-diff", value = "두 기술 문서의 버전 간 차이점 분석")
+    @ShellMethod(key = "doc-diff", value = "두 기술 문서의 버전 간 차이점 전수 분석 및 상세 보고서 생성")
     public String docDiff(
             @ShellOption(help = "소스 버전 이름 (예: 0.3.4)") String sourceVer,
             @ShellOption(help = "소스 파일 경로") String sourcePath,
@@ -28,21 +29,23 @@ public class DocDiffCommand extends BaseAgentCommand {
             @ShellOption(defaultValue = "false", help = "응답 출력 여부") boolean r
     ) throws ExecutionException, InterruptedException {
 
-        logger.info("DocDiffCommand", String.format("Analyzing diff: %s -> %s", sourceVer, targetVer));
+        logger.info("DocDiffCommand", String.format("🚀 Full-Scan Analysis started: %s -> %s", sourceVer, targetVer));
 
         var sourceDoc = new DocVersion(sourceVer, sourcePath);
         var targetDoc = new DocVersion(targetVer, targetPath);
+        
+        // Wrap into a single DiffRequest to avoid planner ambiguity
+        var diffRequest = new DiffRequest(sourceDoc, targetDoc);
 
-        // Invoke Agent
+        // Invoke Agent with the consolidated request
         var result = invokeAgent(
                 DocDiffReport.class,
                 getOptions(p, r),
-                sourceDoc,
-                targetDoc
+                diffRequest
         );
 
         if (result == null) {
-            return "❌ 분석 실패: 결과를 생성하지 못했습니다.";
+            return "❌ 분석 실패: 상세 보고서를 생성하지 못했습니다.";
         }
 
         return "\n" + result.content();
