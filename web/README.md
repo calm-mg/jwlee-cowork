@@ -44,7 +44,11 @@
 
 ## 4. 로컬 실행 및 빌드
 - **별도의 Node.js 설치 불필요** (Tailwind 및 라이브러리는 CDN 활용)
-- **실행**: `web` 디렉토리에서 `./mvnw spring-boot:run`
+- **필수 환경 변수**: 기본 프로파일 기준 `GEMINI_API_KEY`
+- **빌드**: 저장소 루트에서 `./mvnw -f web/pom.xml -DskipTests compile`
+- **실행**: 저장소 루트에서 `./mvnw -f web/pom.xml spring-boot:run`
+- **대안 실행**: `web` 디렉토리에서는 `../mvnw -f pom.xml spring-boot:run`
+- **접속 주소**: `http://localhost:8081`
 - **데이터 보존**: 실행 이력은 `web/data/` 폴더에 파일로 남으므로 `mvn clean` 시에도 안전하게 외부 경로로 설정되어 있음
 
 ## 5. 개발 표준
