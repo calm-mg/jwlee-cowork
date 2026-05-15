@@ -27,6 +27,10 @@ import java.util.stream.Collectors;
 public class BitbucketPrReviewAgent {
     private static final int MAX_GOOD_HIGHLIGHTS = 2;
     private static final int MAX_OVERVIEW_CHARS = 1200;
+    private static final int MAX_BUNDLE_CHARS = 10_000;
+    private static final int MAX_DIFF_SEGMENT_CHARS = 10_000;
+    private static final int MAX_GUIDE_CONTEXT_CHARS = 8_000;
+    private static final int MAX_ANALYSIS_OUTPUT_TOKENS = 8_192;
     private static final Map<String, String> LEGACY_SHORT_URL_PAGE_IDS = Map.of(
             "EwBfN", "878641171",
             "iwJOaw", "1800274571"
@@ -168,6 +172,14 @@ public class BitbucketPrReviewAgent {
             boolean explicit
     ) {}
 
+    private enum CommentIntent {
+        PRAISE,
+        CHECK,
+        MUST_FIX,
+        SHOULD_FIX,
+        INFO
+    }
+
     @Action
     public DraftContext prepareReviewContext(InitialState state) throws IOException {
         var req = state.request();
@@ -244,7 +256,6 @@ public class BitbucketPrReviewAgent {
         List<ConcatenatedDiff> bundles = new ArrayList<>();
         List<DiffSegment> currentBundleSegments = new ArrayList<>();
         int currentChars = 0;
-        int maxChars = 20000;
 
         for (String dir : sortedDirs) {
             List<DiffSegment> dirSegments = new ArrayList<>(groupsByDir.get(dir));
@@ -265,7 +276,7 @@ public class BitbucketPrReviewAgent {
 
                 int unitChars = unit.stream().mapToInt(s -> s.diffContent().length()).sum();
 
-                if (currentChars + unitChars > maxChars && !currentBundleSegments.isEmpty()) {
+                if (currentChars + unitChars > MAX_BUNDLE_CHARS && !currentBundleSegments.isEmpty()) {
                     bundles.add(createBundle(currentBundleSegments));
                     currentBundleSegments = new ArrayList<>();
                     currentChars = 0;
@@ -346,18 +357,29 @@ public class BitbucketPrReviewAgent {
             var bundleAi = ai.withLlm(LlmOptions.withLlmForRole("normal")
                             .withoutThinking()
                             .withTemperature(0.1)
-                            .withMaxTokens(65536));
+                            .withMaxTokens(MAX_ANALYSIS_OUTPUT_TOKENS));
 
             if (standardsRag != null) bundleAi = bundleAi.withReference(standardsRag);
             if (manualsRag != null) bundleAi = bundleAi.withReference(manualsRag);
+
+            String styleGuideContext = truncateContext(context.styleGuide().content(), MAX_GUIDE_CONTEXT_CHARS, "Style Guide");
+            String archGuideContext = truncateContext(context.archGuide().content(), MAX_GUIDE_CONTEXT_CHARS, "Architecture Guide");
+            logger.info("BitbucketPrReview", String.format(
+                    "Bundle input sizes: diff=%d chars, styleGuide=%d/%d chars, archGuide=%d/%d chars, maxOutputTokens=%d",
+                    bundle.combinedDiff().length(),
+                    styleGuideContext.length(),
+                    context.styleGuide().content().length(),
+                    archGuideContext.length(),
+                    context.archGuide().content().length(),
+                    MAX_ANALYSIS_OUTPUT_TOKENS));
 
             BundleAnalysisResult bundleResult = bundleAi.rendering("agents/bitbucketprapp/analyze-code")
                     .createObject(BundleAnalysisResult.class, Map.ofEntries(
                             Map.entry("fileNames", bundle.fileNames()),
                             Map.entry("diffContent", bundle.combinedDiff()),
                             Map.entry("isTruncated", bundle.isTruncated()),
-                            Map.entry("style_guide_content", context.styleGuide().content()),
-                            Map.entry("arch_guide_content", context.archGuide().content()),
+                            Map.entry("style_guide_content", styleGuideContext),
+                            Map.entry("arch_guide_content", archGuideContext),
                             Map.entry("pr_title", context.prMetadata().title()),
                             Map.entry("pr_overview", context.prMetadata().overview()),
                             Map.entry("has_explicit_overview", context.prMetadata().explicitOverviewProvided()),
@@ -396,16 +418,13 @@ public class BitbucketPrReviewAgent {
         allResults.archResults().stream().filter(r -> r.comments() != null).flatMap(r -> r.comments().stream()).forEach(rawComments::add);
         rawComments = rawComments.stream()
                 .filter(Objects::nonNull)
+                .filter(c -> c.content() != null && !c.content().isBlank())
+                .map(this::normalizeCommentClassification)
                 .filter(c -> !shouldSuppressComment(c, context.prMetadata()))
                 .collect(Collectors.toList());
 
-        // 1. 중복 제거 (내용과 위치가 완벽히 동일한 코멘트)
-        Map<String, CodeComment> uniqueCommentsMap = new LinkedHashMap<>();
-        for (CodeComment c : rawComments) {
-            String key = c.fileName() + ":" + c.lineNumber() + ":" + c.content().trim();
-            uniqueCommentsMap.put(key, c);
-        }
-        List<CodeComment> allComments = new ArrayList<>(uniqueCommentsMap.values());
+        // 1. 중복 제거: 같은 위치의 완전 중복뿐 아니라, 여러 라인에 반복된 동일 의미 코멘트도 1회만 유지한다.
+        List<CodeComment> allComments = deduplicateComments(rawComments);
 
         List<CodeComment> positiveHighlights = selectGoodHighlights(allComments);
         List<CodeComment> issueComments = allComments.stream()
@@ -587,34 +606,75 @@ public class BitbucketPrReviewAgent {
 
         String normalized = description.replace("\r\n", "\n");
         String[] lines = normalized.split("\n");
-        Pattern markdownHeadingPattern = Pattern.compile("(?i)^#{1,6}\\s*(?:pr\\s*)?(overview|개요)\\s*[:：-]?\\s*$");
-        Pattern plainHeadingPattern = Pattern.compile("(?i)^\\*{0,2}\\s*(?:pr\\s*)?(overview|개요)\\s*\\*{0,2}\\s*[:：-]?\\s*$");
-        Pattern inlineOverviewPattern = Pattern.compile("(?i)^\\*{0,2}\\s*(?:pr\\s*)?(overview|개요)\\s*\\*{0,2}\\s*[:：-]\\s*(.+)$");
-        Pattern anyHeadingPattern = Pattern.compile("^#{1,6}\\s+.*$");
         StringBuilder section = new StringBuilder();
         boolean inOverview = false;
 
         for (String line : lines) {
             String trimmed = line.trim();
             if (!inOverview) {
-                Matcher inlineMatcher = inlineOverviewPattern.matcher(trimmed);
+                Matcher inlineMatcher = overviewInlinePattern().matcher(normalizeHeadingMarkup(trimmed));
                 if (inlineMatcher.matches()) {
-                    return inlineMatcher.group(2).trim();
+                    return inlineMatcher.group(1).trim();
                 }
-                if (markdownHeadingPattern.matcher(trimmed).matches() || plainHeadingPattern.matcher(trimmed).matches()) {
+                if (isOverviewHeadingLine(trimmed)) {
                     inOverview = true;
                 }
                 continue;
             }
 
-            if (anyHeadingPattern.matcher(trimmed).matches()
-                    || (plainHeadingPattern.matcher(trimmed).matches() && !section.isEmpty())) {
+            if (!section.isEmpty() && isSectionHeadingLine(trimmed)) {
                 break;
             }
             section.append(line).append("\n");
         }
 
         return section.toString().trim();
+    }
+
+    private boolean isOverviewHeadingLine(String line) {
+        String normalized = normalizeHeadingMarkup(line);
+        return overviewHeadingPattern().matcher(normalized).matches();
+    }
+
+    private Pattern overviewInlinePattern() {
+        return Pattern.compile("(?i)^" + overviewHeadingTerms() + "\\s*[:：-]\\s*(.+)$");
+    }
+
+    private Pattern overviewHeadingPattern() {
+        return Pattern.compile("(?i)^" + overviewHeadingTerms() + "\\s*[:：-]?\\s*[\\p{Punct}\\p{So}\\p{Sk}\\s]*$");
+    }
+
+    private String overviewHeadingTerms() {
+        return "(?:(?:(?:pr|pull\\s*request)\\s*)?(?:overview|개요|summary|요약)|(?:변경|작업)\\s*(?:개요|요약))";
+    }
+
+    private String normalizeHeadingMarkup(String line) {
+        if (line == null) {
+            return "";
+        }
+
+        String normalized = line.trim();
+        normalized = normalized.replaceFirst("^>\\s*", "");
+        normalized = normalized.replaceFirst("^#{1,6}\\s*", "");
+        normalized = normalized.replaceFirst("(?i)^h[1-6]\\.\\s*", "");
+        normalized = normalized.replace("*", "");
+        normalized = normalized.replace("_", "");
+        return normalized.trim();
+    }
+
+    private boolean isSectionHeadingLine(String line) {
+        if (line == null || line.isBlank()) {
+            return false;
+        }
+
+        String trimmed = line.trim();
+        if (trimmed.matches("^#{1,6}\\s+.*$") || trimmed.matches("(?i)^h[1-6]\\.\\s+.*$")) {
+            return true;
+        }
+
+        String normalized = normalizeHeadingMarkup(trimmed);
+        return normalized.length() <= 80
+                && normalized.matches("^[\\p{L}\\p{N}][\\p{L}\\p{N}\\s/_().-]{1,60}[:：]\\s*$");
     }
 
     private String firstMeaningfulParagraph(String text) {
@@ -641,6 +701,14 @@ public class BitbucketPrReviewAgent {
             return text;
         }
         return text.substring(0, maxChars - 3).trim() + "...";
+    }
+
+    private String truncateContext(String text, int maxChars, String label) {
+        if (text == null || text.length() <= maxChars) {
+            return defaultString(text, "");
+        }
+        return text.substring(0, maxChars - 120).trim()
+                + "\n\n[... " + label + " truncated for PR review latency; use RAG references for additional details if needed ...]";
     }
 
     private String defaultString(String value, String fallback) {
@@ -699,16 +767,91 @@ public class BitbucketPrReviewAgent {
         return simpleName.matches(".*(test|tests|spec|it)(\\.[^.]+)+$");
     }
 
+    private CodeComment normalizeCommentClassification(CodeComment comment) {
+        CommentIntent intent = classifyCommentIntent(comment);
+        String body = stripLeadingReviewLabel(comment.content());
+
+        return switch (intent) {
+            case PRAISE -> new CodeComment(
+                    comment.fileName(),
+                    null,
+                    "✅ [GOOD] " + body,
+                    "GLOBAL",
+                    "SUGGESTION",
+                    comment.criteriaId()
+            );
+            case CHECK -> new CodeComment(
+                    comment.fileName(),
+                    comment.lineNumber(),
+                    "ℹ️ [INFO] " + body,
+                    comment.type(),
+                    "SUGGESTION",
+                    comment.criteriaId()
+            );
+            case MUST_FIX -> new CodeComment(
+                    comment.fileName(),
+                    comment.lineNumber(),
+                    "🚨 [CRITICAL] " + body,
+                    comment.type(),
+                    "MUST_FIX",
+                    comment.criteriaId()
+            );
+            case SHOULD_FIX -> new CodeComment(
+                    comment.fileName(),
+                    comment.lineNumber(),
+                    "🟠 [MAJOR] " + body,
+                    comment.type(),
+                    "SHOULD_FIX",
+                    comment.criteriaId()
+            );
+            case INFO -> new CodeComment(
+                    comment.fileName(),
+                    comment.lineNumber(),
+                    "ℹ️ [INFO] " + body,
+                    comment.type(),
+                    "SUGGESTION",
+                    comment.criteriaId()
+            );
+        };
+    }
+
+    private CommentIntent classifyCommentIntent(CodeComment comment) {
+        String normalized = normalizeForIntent(comment.content());
+        if ((hasGoodMarker(comment.content())
+                || containsPositiveSignal(normalized)
+                || containsPraiseOutcomeSignal(normalized))
+                && !containsOpenIssueDirective(normalized)) {
+            return CommentIntent.PRAISE;
+        }
+
+        if (containsCheckSignal(normalized) && !containsExplicitFixDirective(normalized)) {
+            return CommentIntent.CHECK;
+        }
+
+        if (containsMustFixSignal(normalized)) {
+            return CommentIntent.MUST_FIX;
+        }
+
+        if (containsConcreteFixSignal(normalized)) {
+            return CommentIntent.SHOULD_FIX;
+        }
+
+        return CommentIntent.INFO;
+    }
+
     private boolean isPositiveComment(CodeComment comment) {
         if (comment == null || comment.content() == null) {
             return false;
         }
-        String normalized = comment.content().toLowerCase(Locale.ROOT);
-        return normalized.contains("[good]") || normalized.contains("✅");
+        String normalized = normalizeForIntent(comment.content());
+        return (hasGoodMarker(comment.content()) || containsPositiveSignal(normalized))
+                && !containsProblemSignal(normalized);
     }
 
     private boolean shouldSuppressComment(CodeComment comment, PrMetadata prMetadata) {
-        return isLenientTestStyleComment(comment) || isFalseOverviewMissingComment(comment, prMetadata);
+        return isLenientTestStyleComment(comment)
+                || isFalseOverviewMissingComment(comment, prMetadata)
+                || isPraiseOnlySeverityMismatch(comment);
     }
 
     private boolean isLenientTestStyleComment(CodeComment comment) {
@@ -741,7 +884,7 @@ public class BitbucketPrReviewAgent {
     }
 
     private boolean isFalseOverviewMissingComment(CodeComment comment, PrMetadata prMetadata) {
-        if (comment == null || comment.content() == null || prMetadata == null || !prMetadata.explicitOverviewProvided()) {
+        if (comment == null || comment.content() == null || prMetadata == null) {
             return false;
         }
 
@@ -755,12 +898,20 @@ public class BitbucketPrReviewAgent {
                 || normalized.contains("개요가 비어")
                 || normalized.contains("개요 없음");
 
-        return saysOverviewMissing;
+        if (!saysOverviewMissing) {
+            return false;
+        }
+
+        return prMetadata.explicitOverviewProvided()
+                || !isBlank(prMetadata.overview())
+                || !isBlank(prMetadata.description());
     }
 
     private List<CodeComment> selectGoodHighlights(List<CodeComment> comments) {
         return comments.stream()
                 .filter(this::isPositiveComment)
+                .filter(c -> !hasIssueSeverity(c))
+                .filter(c -> !containsIssueSeverityLabel(c.content()))
                 .filter(c -> c.lineNumber() == null || "GLOBAL".equals(c.type()))
                 .sorted(Comparator.comparing((CodeComment c) -> c.fileName() == null ? "" : c.fileName())
                         .thenComparing(c -> c.content() == null ? "" : c.content()))
@@ -817,9 +968,375 @@ public class BitbucketPrReviewAgent {
                 isTruncated = true;
                 diffContent = diffContent.lines().limit(500).collect(Collectors.joining("\n")) + "\n... (Truncated) ...";
             }
+            if (diffContent.length() > MAX_DIFF_SEGMENT_CHARS) {
+                isTruncated = true;
+                diffContent = truncateContext(diffContent, MAX_DIFF_SEGMENT_CHARS, "Diff");
+            }
 
             segments.add(new DiffSegment(fileName, diffContent, isTruncated, totalLines));
         }
         return segments;
+    }
+
+    private List<CodeComment> deduplicateComments(List<CodeComment> comments) {
+        List<CodeComment> unique = new ArrayList<>();
+        Set<String> exactKeys = new HashSet<>();
+        List<String> semanticKeys = new ArrayList<>();
+
+        for (CodeComment comment : comments) {
+            String exactKey = exactCommentKey(comment);
+            if (!exactKeys.add(exactKey)) {
+                continue;
+            }
+
+            String semanticKey = semanticCommentKey(comment);
+            boolean semanticDuplicate = !semanticKey.isBlank()
+                    && semanticKeys.stream().anyMatch(existing -> isSemanticallySameComment(existing, semanticKey));
+            if (semanticDuplicate) {
+                continue;
+            }
+
+            unique.add(comment);
+            if (!semanticKey.isBlank()) {
+                semanticKeys.add(semanticKey);
+            }
+        }
+
+        return unique;
+    }
+
+    private String exactCommentKey(CodeComment comment) {
+        return String.join(":",
+                defaultString(comment.fileName(), ""),
+                String.valueOf(comment.lineNumber()),
+                normalizeWhitespace(comment.content()));
+    }
+
+    private String semanticCommentKey(CodeComment comment) {
+        String normalized = normalizeWhitespace(comment.content()).toLowerCase(Locale.ROOT);
+        normalized = normalized.replaceAll("(?i)\\[(critical|major|info|good|must[_\\s-]*fix|should[_\\s-]*fix|suggestion)\\]", " ");
+        normalized = normalized.replaceAll("[✅🚨🟠ℹ📌⚠️]", " ");
+        normalized = normalized.replaceAll("\\(\\s*관련\\s*파일\\s*:[^)]*\\)", " ");
+        normalized = normalized.replaceAll("(?i)\\b(line|라인)\\s*\\d+\\b", " ");
+        normalized = normalized.replaceAll("\\s+", " ").trim();
+        return normalized;
+    }
+
+    private boolean isSemanticallySameComment(String first, String second) {
+        if (first.equals(second)) {
+            return true;
+        }
+
+        Set<String> firstTokens = semanticTokens(first);
+        Set<String> secondTokens = semanticTokens(second);
+        if (firstTokens.size() < 5 || secondTokens.size() < 5) {
+            return false;
+        }
+
+        Set<String> intersection = new HashSet<>(firstTokens);
+        intersection.retainAll(secondTokens);
+        double overlapAgainstSmaller = intersection.size() / (double) Math.min(firstTokens.size(), secondTokens.size());
+        double overlapAgainstLarger = intersection.size() / (double) Math.max(firstTokens.size(), secondTokens.size());
+        return overlapAgainstSmaller >= 0.90 && overlapAgainstLarger >= 0.75;
+    }
+
+    private Set<String> semanticTokens(String text) {
+        Set<String> tokens = new HashSet<>();
+        Matcher matcher = Pattern.compile("[\\p{L}\\p{N}_]+").matcher(text);
+        while (matcher.find()) {
+            String token = matcher.group().toLowerCase(Locale.ROOT);
+            if (token.length() >= 2) {
+                tokens.add(token);
+            }
+        }
+        return tokens;
+    }
+
+    private boolean isPraiseOnlySeverityMismatch(CodeComment comment) {
+        return isPositiveComment(comment)
+                && (hasIssueSeverity(comment) || containsIssueSeverityLabel(comment.content()));
+    }
+
+    private boolean hasIssueSeverity(CodeComment comment) {
+        if (comment == null || comment.severity() == null) {
+            return false;
+        }
+        String severity = comment.severity().toUpperCase(Locale.ROOT);
+        return severity.contains("MUST") || severity.contains("SHOULD");
+    }
+
+    private boolean containsIssueSeverityLabel(String content) {
+        if (content == null) {
+            return false;
+        }
+        String normalized = content.toLowerCase(Locale.ROOT);
+        return normalized.contains("[critical]")
+                || normalized.contains("[major]")
+                || normalized.contains("[must_fix]")
+                || normalized.contains("[must fix]")
+                || normalized.contains("[should_fix]")
+                || normalized.contains("[should fix]");
+    }
+
+    private String normalizeForIntent(String content) {
+        return stripLeadingReviewLabel(content)
+                .toLowerCase(Locale.ROOT)
+                .replace("\uFE0F", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private String stripLeadingReviewLabel(String content) {
+        String stripped = normalizeWhitespace(content).replace("\uFE0F", "");
+        String previous;
+        do {
+            previous = stripped;
+            stripped = stripped.replaceFirst("^(?:[\\s✅🚨🟠ℹ📌⚠:：\\-]+|(?i:\\[(?:critical|major|info|good|must[_\\s-]*fix|should[_\\s-]*fix|suggestion)\\])\\s*)+", "").trim();
+        } while (!stripped.equals(previous));
+        return stripped.isBlank() ? normalizeWhitespace(content) : stripped;
+    }
+
+    private boolean containsPositiveSignal(String normalizedContent) {
+        return normalizedContent.contains("잘 사용")
+                || normalizedContent.contains("잘 적용")
+                || normalizedContent.contains("잘 처리")
+                || normalizedContent.contains("잘 해결")
+                || normalizedContent.contains("좋습니다")
+                || normalizedContent.contains("적절")
+                || normalizedContent.contains("효과적")
+                || normalizedContent.contains("명확")
+                || normalizedContent.contains("깔끔")
+                || normalizedContent.contains("일관")
+                || normalizedContent.contains("안전하게")
+                || normalizedContent.contains("올바르게")
+                || normalizedContent.contains("개선되었습니다")
+                || normalizedContent.contains("개선했습니다")
+                || normalizedContent.contains("해결했습니다")
+                || normalizedContent.contains("보장했습니다")
+                || normalizedContent.contains("방지했습니다")
+                || normalizedContent.contains("향상되었습니다")
+                || normalizedContent.contains("향상시켰습니다")
+                || normalizedContent.contains("최적화했습니다")
+                || normalizedContent.contains("강화합니다")
+                || normalizedContent.contains("강화했습니다")
+                || normalizedContent.contains("높였습니다")
+                || normalizedContent.contains("좋은 설계")
+                || normalizedContent.contains("좋은 정리")
+                || normalizedContent.contains("중요한 개선")
+                || normalizedContent.contains("중요한 수정")
+                || normalizedContent.contains("good")
+                || normalizedContent.contains("well handled")
+                || normalizedContent.contains("appropriate")
+                || normalizedContent.contains("clear");
+    }
+
+    private boolean containsPraiseOutcomeSignal(String normalizedContent) {
+        return normalizedContent.contains("이 변경으로")
+                || normalizedContent.contains("수정함으로써")
+                || normalizedContent.contains("추가하여")
+                || normalizedContent.contains("제거되어")
+                || normalizedContent.contains("개선하여")
+                || normalizedContent.contains("도입하여")
+                || normalizedContent.contains("사용하여")
+                || normalizedContent.contains("변경한 것은")
+                || normalizedContent.contains("반환하도록 변경")
+                || normalizedContent.contains("올바르게 해제")
+                || normalizedContent.contains("독립성을 확보")
+                || normalizedContent.contains("의존성을 줄")
+                || normalizedContent.contains("빌드 시간을 최적화")
+                || normalizedContent.contains("효과적으로 방지")
+                || normalizedContent.contains("무결성을 보호")
+                || normalizedContent.contains("신뢰성을 크게 높")
+                || normalizedContent.contains("신뢰성을 높")
+                || normalizedContent.contains("신뢰를 강화")
+                || normalizedContent.contains("정확성이 향상")
+                || normalizedContent.contains("충실도를 높")
+                || normalizedContent.contains("복잡도를 줄")
+                || normalizedContent.contains("가독성")
+                || normalizedContent.contains("재사용성")
+                || normalizedContent.contains("더 일치하게")
+                || normalizedContent.contains("필수적입니다");
+    }
+
+    private boolean hasGoodMarker(String content) {
+        if (content == null) {
+            return false;
+        }
+        return content.toLowerCase(Locale.ROOT).contains("[good]") || content.contains("✅");
+    }
+
+    private boolean containsCheckSignal(String normalizedContent) {
+        return normalizedContent.contains("확인")
+                || normalizedContent.contains("검토")
+                || normalizedContent.contains("점검")
+                || normalizedContent.contains("검증 필요")
+                || normalizedContent.contains("검증이 필요")
+                || normalizedContent.contains("살펴")
+                || normalizedContent.contains("verify")
+                || normalizedContent.contains("confirm")
+                || normalizedContent.contains("check")
+                || normalizedContent.contains("review");
+    }
+
+    private boolean containsMustFixSignal(String normalizedContent) {
+        return normalizedContent.contains("출시 차단")
+                || normalizedContent.contains("릴리즈 차단")
+                || normalizedContent.contains("장애")
+                || normalizedContent.contains("크래시")
+                || normalizedContent.contains("crash")
+                || normalizedContent.contains("데이터 손실")
+                || normalizedContent.contains("data loss")
+                || normalizedContent.contains("보안")
+                || normalizedContent.contains("취약")
+                || normalizedContent.contains("vulnerab")
+                || normalizedContent.contains("sql injection")
+                || normalizedContent.contains("인증 우회")
+                || normalizedContent.contains("권한 우회")
+                || normalizedContent.contains("deadlock")
+                || normalizedContent.contains("데드락")
+                || normalizedContent.contains("메모리 누수")
+                || normalizedContent.contains("memory leak")
+                || normalizedContent.contains("표준 위반")
+                || normalizedContent.contains("must fix")
+                || normalizedContent.contains("must_fix");
+    }
+
+    private boolean containsConcreteFixSignal(String normalizedContent) {
+        String problemScan = stripResolvedProblemPhrases(normalizedContent);
+        if (containsPraiseOutcomeSignal(problemScan) && !containsOpenIssueDirective(problemScan)) {
+            return false;
+        }
+        return containsExplicitFixDirective(problemScan)
+                || problemScan.contains("누락")
+                || problemScan.contains("위반")
+                || problemScan.contains("오류")
+                || problemScan.contains("버그")
+                || problemScan.contains("불일치")
+                || problemScan.contains("잘못")
+                || problemScan.contains("미흡")
+                || problemScan.contains("부족")
+                || problemScan.contains("실패")
+                || problemScan.contains("경쟁 상태")
+                || problemScan.contains("race condition")
+                || problemScan.contains("should fix")
+                || problemScan.contains("should_fix");
+    }
+
+    private boolean containsExplicitFixDirective(String normalizedContent) {
+        String problemScan = stripResolvedProblemPhrases(normalizedContent);
+        boolean hasActionVerb = problemScan.contains("수정")
+                || problemScan.contains("고쳐")
+                || problemScan.contains("보완")
+                || problemScan.contains("추가")
+                || problemScan.contains("제거")
+                || problemScan.contains("변경")
+                || problemScan.contains("분리")
+                || problemScan.contains("막아")
+                || problemScan.contains("차단")
+                || problemScan.contains("방지");
+
+        if (containsCheckSignal(problemScan) && !hasActionVerb) {
+            return false;
+        }
+
+        return problemScan.contains("수정")
+                || problemScan.contains("고쳐")
+                || problemScan.contains("보완")
+                || problemScan.contains("막아")
+                || problemScan.contains("차단")
+                || problemScan.contains("방지")
+                || problemScan.matches(".*(추가|제거|변경|분리).*(필요|해야|하십시오|하세요|권장|누락).*")
+                || problemScan.matches(".*(필요|해야|하십시오|하세요|권장).*(추가|제거|변경|분리).*")
+                || problemScan.matches(".*(테스트|예외|검증|처리|로직|락|lock|mutex|동기화|상수|타입|매핑|분기|조건).*(필요|해야|하십시오|권장).*")
+                || problemScan.matches(".*(필요|해야|하십시오|권장).*(테스트|예외|검증|처리|로직|락|lock|mutex|동기화|상수|타입|매핑|분기|조건).*");
+    }
+
+    private boolean containsProblemSignal(String normalizedContent) {
+        String problemScan = stripResolvedProblemPhrases(normalizedContent)
+                .replaceAll("(?i)\\[(critical|major|info|good|must[_\\s-]*fix|should[_\\s-]*fix|suggestion)\\]", "");
+        if (containsPraiseOutcomeSignal(problemScan) && !containsOpenIssueDirective(problemScan)) {
+            return false;
+        }
+
+        return containsCheckSignal(problemScan)
+                || containsMustFixSignal(problemScan)
+                || containsConcreteFixSignal(problemScan)
+                || problemScan.contains("하지만")
+                || problemScan.contains("그러나")
+                || problemScan.contains("필요")
+                || problemScan.contains("위험")
+                || problemScan.contains("문제")
+                || problemScan.contains("불가")
+                || problemScan.contains("않")
+                || problemScan.contains("없")
+                || problemScan.contains("해야")
+                || problemScan.contains("하십시오")
+                || problemScan.contains("권장")
+                || problemScan.contains("missing")
+                || problemScan.contains("risk")
+                || problemScan.contains("invalid")
+                || problemScan.contains("should")
+                || problemScan.contains("must")
+                || problemScan.contains("need");
+    }
+
+    private boolean containsOpenIssueDirective(String normalizedContent) {
+        String problemScan = normalizedContent.toLowerCase(Locale.ROOT);
+        return problemScan.contains("하지만")
+                || problemScan.contains("그러나")
+                || problemScan.contains("다만")
+                || problemScan.contains("필요합니다")
+                || problemScan.contains("필요합니다.")
+                || problemScan.contains("필요가 있습니다")
+                || problemScan.contains("해야 합니다")
+                || problemScan.contains("해야합니다")
+                || problemScan.contains("하십시오")
+                || problemScan.contains("권장합니다")
+                || problemScan.contains("확인이 필요")
+                || problemScan.contains("검토가 필요")
+                || problemScan.contains("검증이 필요")
+                || problemScan.contains("누락되어")
+                || problemScan.contains("문제가 있습니다")
+                || problemScan.contains("문제가 발생")
+                || problemScan.contains("발생할 수 있습니다")
+                || problemScan.contains("될 수 있습니다")
+                || problemScan.contains("should")
+                || problemScan.contains("need to")
+                || problemScan.contains("must");
+    }
+
+    private String stripResolvedProblemPhrases(String normalizedContent) {
+        return normalizedContent
+                .replace("문제를 해결", "")
+                .replace("문제 해결", "")
+                .replace("문제가 있었습니다", "")
+                .replace("문제가 있더라도", "")
+                .replace("위험을 줄", "")
+                .replace("위험 감소", "")
+                .replace("리스크를 줄", "")
+                .replace("리스크 감소", "")
+                .replace("메모리 누수나 리소스 충돌을 방지", "")
+                .replace("경쟁 조건(race condition)을 효과적으로 방지", "")
+                .replace("경쟁 조건을 효과적으로 방지", "")
+                .replace("race condition을 효과적으로 방지", "")
+                .replace("잘 사용", "")
+                .replace("잘 적용", "")
+                .replace("잘 처리", "")
+                .replace("잘 추가", "")
+                .replace("잘 제거", "")
+                .replace("잘 변경", "")
+                .replace("잘 분리", "")
+                .replace("잘 보완", "")
+                .replace("risk mitigated", "")
+                .replace("risk reduced", "")
+                .replace("problem solved", "");
+    }
+
+    private String normalizeWhitespace(String value) {
+        return value == null ? "" : value.trim().replaceAll("\\s+", " ");
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

@@ -31,7 +31,7 @@ embabel:
         prompts:
           default-timeout: 180s
         data-binding:
-          max-attempts: 15
+          max-attempts: 3
       models:
         openai:
           max-attempts: 30

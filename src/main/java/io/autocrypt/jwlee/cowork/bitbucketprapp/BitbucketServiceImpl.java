@@ -40,14 +40,17 @@ public class BitbucketServiceImpl implements BitbucketService {
         log.info("Fetching PR {} from Bitbucket repository {}/{}", prId, workspace, repository);
 
         try {
-            Map prData = restClient.get()
+            Map<?, ?> prData = restClient.get()
                     .uri("/repositories/{workspace}/{repo}/pullrequests/{id}", workspace, repository, prId)
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .body(Map.class);
+            if (prData == null) {
+                throw new IllegalStateException("Bitbucket PR response body is empty");
+            }
 
-            String title = (String) prData.get("title");
-            String description = (String) prData.get("description");
+            String title = extractTitle(prData);
+            String description = extractDescription(prData);
 
             log.info("Fetching Diff for PR {}", prId);
             String rawDiff = restClient.get()
@@ -61,6 +64,45 @@ public class BitbucketServiceImpl implements BitbucketService {
             log.error("Failed to fetch PR {}: {}", prId, e.getMessage());
             throw new RuntimeException("Bitbucket API failed: " + e.getMessage(), e);
         }
+    }
+
+    static String extractTitle(Map<?, ?> prData) {
+        return firstNonBlank(
+                stringValue(prData.get("title")),
+                nestedString(prData, "rendered", "title", "raw")
+        );
+    }
+
+    static String extractDescription(Map<?, ?> prData) {
+        return firstNonBlank(
+                stringValue(prData.get("description")),
+                nestedString(prData, "rendered", "description", "raw"),
+                nestedString(prData, "summary", "raw")
+        );
+    }
+
+    private static String nestedString(Map<?, ?> root, String... path) {
+        Object current = root;
+        for (String key : path) {
+            if (!(current instanceof Map<?, ?> currentMap)) {
+                return null;
+            }
+            current = currentMap.get(key);
+        }
+        return stringValue(current);
+    }
+
+    private static String stringValue(Object value) {
+        return value instanceof String text ? text : null;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     @Override

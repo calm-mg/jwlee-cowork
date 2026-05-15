@@ -9,6 +9,7 @@ import io.autocrypt.jwlee.cowork.core.tools.LocalRagTools;
 import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 import static org.mockito.Mockito.*;
@@ -46,6 +47,27 @@ class BitbucketPrReviewAgentTest {
                     false,
                     false
             );
+
+    @Test
+    void testBitbucketServiceImpl_ExtractsRenderedDescriptionRaw() {
+        Map<String, Object> prData = Map.of(
+                "title", "Rendered description PR",
+                "rendered", Map.of(
+                        "description", Map.of(
+                                "raw", """
+                                ## Overview
+                                Bitbucket rendered description raw를 사용합니다.
+                                """
+                        )
+                ),
+                "summary", Map.of("raw", "summary fallback")
+        );
+
+        assertEquals("""
+                ## Overview
+                Bitbucket rendered description raw를 사용합니다.
+                """, BitbucketServiceImpl.extractDescription(prData));
+    }
 
     @Test
     void testPrepareReviewContext_ExtractsPrOverviewFromDescription() throws IOException {
@@ -134,6 +156,49 @@ class BitbucketPrReviewAgentTest {
         BitbucketPrReviewAgent.DraftContext draft = agent.prepareReviewContext(new BitbucketPrReviewAgent.InitialState(request));
 
         assertEquals("스케줄러 제거 후 event loop 기반으로 전환합니다.", draft.prMetadata().overview());
+        assertTrue(draft.prMetadata().explicitOverviewProvided());
+    }
+
+    @Test
+    void testPrepareReviewContext_ExtractsDecoratedPrOverviewHeading() throws IOException {
+        BitbucketService bitbucketService = mock(BitbucketService.class);
+        ConfluenceService confluenceService = mock(ConfluenceService.class);
+        CoworkLogger logger = mock(CoworkLogger.class);
+        BitbucketPrReviewAgent agent = new BitbucketPrReviewAgent(bitbucketService, null, null, confluenceService, logger);
+
+        when(confluenceService.getPageStorage("123")).thenReturn("style-guide");
+        when(confluenceService.getPageStorage("456")).thenReturn("arch-guide");
+        when(bitbucketService.fetchPullRequest("autocrypt", "repo", "22")).thenReturn(new PullRequestData(
+                "22",
+                "Concurrency cleanup",
+                """
+                ### PR Overview 🧾
+                mutex 보호 범위를 조정해 동시성 접근을 정리합니다.
+
+                Testing:
+                - smoke test
+                """,
+                """
+                diff --git a/src/main/cpp/Lock.cpp b/src/main/cpp/Lock.cpp
+                --- a/src/main/cpp/Lock.cpp
+                +++ b/src/main/cpp/Lock.cpp
+                @@ -1,1 +1,2 @@
+                +new line
+                """
+        ));
+
+        var request = new BitbucketPrReviewAgent.PrReviewRequest(
+                "autocrypt/repo",
+                22L,
+                null,
+                null,
+                "https://example.atlassian.net/wiki/pages/123",
+                "https://example.atlassian.net/wiki/pages/456"
+        );
+
+        BitbucketPrReviewAgent.DraftContext draft = agent.prepareReviewContext(new BitbucketPrReviewAgent.InitialState(request));
+
+        assertEquals("mutex 보호 범위를 조정해 동시성 접근을 정리합니다.", draft.prMetadata().overview());
         assertTrue(draft.prMetadata().explicitOverviewProvided());
     }
 
@@ -464,5 +529,253 @@ class BitbucketPrReviewAgentTest {
         assertEquals(0, report.totalIssuesFound());
         assertTrue(report.globalComments().isEmpty());
         verify(bitbucketService).postGlobalComment(eq("autocrypt"), eq("repo"), eq("1"), anyString());
+    }
+
+    @Test
+    void testSynthesizeFinalReport_SuppressesPraiseOnlySeverityMismatch() {
+        BitbucketService bitbucketService = mock(BitbucketService.class);
+        CoworkLogger logger = mock(CoworkLogger.class);
+        BitbucketPrReviewAgent agent = new BitbucketPrReviewAgent(bitbucketService, null, null, null, logger);
+
+        BitbucketPrReviewAgent.ReadyContext readyContext = new BitbucketPrReviewAgent.ReadyContext(
+                new BitbucketPrReviewAgent.PrReviewRequest("autocrypt/repo", 1L, null, null, "style-url", "arch-url"),
+                List.of(new BitbucketPrReviewAgent.ConcatenatedDiff(List.of("src/main/cpp/Lock.cpp"), "diff", false)),
+                null,
+                null,
+                STYLE_GUIDE,
+                ARCH_GUIDE,
+                DEFAULT_PR_METADATA
+        );
+
+        BitbucketPrReviewAgent.AllAnalysisResults results = new BitbucketPrReviewAgent.AllAnalysisResults(
+                readyContext,
+                List.of(new BitbucketPrReviewAgent.StyleAnalysisResult(List.of(), 96)),
+                List.of(new BitbucketPrReviewAgent.ArchAnalysisResult(List.of(
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "src/main/cpp/Lock.cpp",
+                                30,
+                                "📌 [MUST_FIX] mutex를 잘 사용해 동시성 문제를 해결했습니다.",
+                                "LINE",
+                                "MUST_FIX",
+                                "ARCH")
+                ), 92))
+        );
+
+        BitbucketPrReviewAgent.FinalReviewReport report = agent.synthesizeFinalReport(results, null, null);
+
+        assertEquals(0, report.totalIssuesFound());
+        assertEquals(1, report.globalComments().size());
+        assertEquals("✅ [GOOD] mutex를 잘 사용해 동시성 문제를 해결했습니다.", report.globalComments().get(0).content());
+        assertEquals("SUGGESTION", report.globalComments().get(0).severity());
+        assertTrue(report.lineComments().isEmpty());
+        verify(bitbucketService).postGlobalComment(eq("autocrypt"), eq("repo"), eq("1"), anyString());
+        verify(bitbucketService, never()).postLineComment(eq("autocrypt"), eq("repo"), eq("1"), eq("src/main/cpp/Lock.cpp"), eq(30), anyString());
+    }
+
+    @Test
+    void testSynthesizeFinalReport_ReclassifiesMajorCheckAsInfoSuggestion() {
+        BitbucketService bitbucketService = mock(BitbucketService.class);
+        CoworkLogger logger = mock(CoworkLogger.class);
+        BitbucketPrReviewAgent agent = new BitbucketPrReviewAgent(bitbucketService, null, null, null, logger);
+
+        BitbucketPrReviewAgent.ReadyContext readyContext = new BitbucketPrReviewAgent.ReadyContext(
+                new BitbucketPrReviewAgent.PrReviewRequest("autocrypt/repo", 1L, null, null, "style-url", "arch-url"),
+                List.of(new BitbucketPrReviewAgent.ConcatenatedDiff(List.of("src/main/cpp/Lock.cpp"), "diff", false)),
+                null,
+                null,
+                STYLE_GUIDE,
+                ARCH_GUIDE,
+                DEFAULT_PR_METADATA
+        );
+
+        BitbucketPrReviewAgent.AllAnalysisResults results = new BitbucketPrReviewAgent.AllAnalysisResults(
+                readyContext,
+                List.of(new BitbucketPrReviewAgent.StyleAnalysisResult(List.of(), 96)),
+                List.of(new BitbucketPrReviewAgent.ArchAnalysisResult(List.of(
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "src/main/cpp/Lock.cpp",
+                                45,
+                                "🟠 [MAJOR] mutex 경계에서 race condition이 없는지 확인이 필요합니다.",
+                                "LINE",
+                                "SHOULD_FIX",
+                                "ARCH")
+                ), 92))
+        );
+
+        BitbucketPrReviewAgent.FinalReviewReport report = agent.synthesizeFinalReport(results, null, null);
+
+        assertEquals(1, report.totalIssuesFound());
+        assertEquals(1, report.lineComments().size());
+        BitbucketPrReviewAgent.CodeComment comment = report.lineComments().get(0);
+        assertEquals("ℹ️ [INFO] mutex 경계에서 race condition이 없는지 확인이 필요합니다.", comment.content());
+        assertEquals("SUGGESTION", comment.severity());
+        verify(bitbucketService).postLineComment(
+                "autocrypt",
+                "repo",
+                "1",
+                "src/main/cpp/Lock.cpp",
+                45,
+                "ℹ️ [INFO] mutex 경계에서 race condition이 없는지 확인이 필요합니다.");
+    }
+
+    @Test
+    void testSynthesizeFinalReport_ReclassifiesMajorPraiseOutcomeExamplesAsGood() {
+        BitbucketService bitbucketService = mock(BitbucketService.class);
+        CoworkLogger logger = mock(CoworkLogger.class);
+        BitbucketPrReviewAgent agent = new BitbucketPrReviewAgent(bitbucketService, null, null, null, logger);
+
+        BitbucketPrReviewAgent.ReadyContext readyContext = new BitbucketPrReviewAgent.ReadyContext(
+                new BitbucketPrReviewAgent.PrReviewRequest("autocrypt/repo", 1L, null, null, "style-url", "arch-url"),
+                List.of(new BitbucketPrReviewAgent.ConcatenatedDiff(List.of(
+                        "test_sync_event_scheduler.cpp",
+                        "test_initial_cycle.cpp"), "diff", false)),
+                null,
+                null,
+                STYLE_GUIDE,
+                ARCH_GUIDE,
+                DEFAULT_PR_METADATA
+        );
+
+        BitbucketPrReviewAgent.AllAnalysisResults results = new BitbucketPrReviewAgent.AllAnalysisResults(
+                readyContext,
+                List.of(new BitbucketPrReviewAgent.StyleAnalysisResult(List.of(), 96)),
+                List.of(new BitbucketPrReviewAgent.ArchAnalysisResult(List.of(
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "test_sync_event_scheduler.cpp",
+                                10,
+                                "🚨 [CRITICAL] [MAJOR] TearDown() 함수에서 lcm_service_.reset();을 추가하여 각 테스트 케이스 실행 후 LcmServiceImpl 인스턴스가 올바르게 해제되도록 보장했습니다. 이는 테스트 간의 독립성을 확보하고 잠재적인 메모리 누수나 리소스 충돌을 방지하는 데 필수적입니다.",
+                                "LINE",
+                                "MUST_FIX",
+                                "ARCH"),
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "test_sync_event_scheduler.cpp",
+                                20,
+                                "🟠 [MAJOR] [MAJOR] pending_request_ids_for_mock_와 같은 공유 자원에 대한 접근 시 std::lock_guard를 사용하여 명시적으로 뮤텍스를 획득함으로써, 멀티스레드 환경에서 발생할 수 있는 경쟁 조건(race condition)을 효과적으로 방지했습니다. 특히 getPendingRequestIds()에서 벡터의 복사본을 반환하도록 변경한 것은 내부 상태의 무결성을 보호하는 좋은 설계입니다. 이는 테스트의 신뢰성을 크게 높이는 중요한 개선 사항입니다.",
+                                "LINE",
+                                "SHOULD_FIX",
+                                "ARCH"),
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "test_initial_cycle.cpp",
+                                30,
+                                "🟠 [MAJOR] [MAJOR] getPendingRequestCount()에 대한 Mock 설정이 Return(0)으로 고정되어 있어, 실제 대기 중인 요청이 있더라도 테스트 로직이 이를 인지하지 못하는 문제가 있었습니다. 이 변경으로 Invoke를 사용하여 pending_request_ids_for_mock_의 실제 크기를 반환하도록 수정함으로써 Mock의 동작이 실제 시스템의 동작과 더 일치하게 되어 테스트의 정확성이 향상되었습니다. 이는 테스트의 신뢰성을 높이는 중요한 수정입니다.",
+                                "LINE",
+                                "SHOULD_FIX",
+                                "ARCH")
+                ), 92))
+        );
+
+        BitbucketPrReviewAgent.FinalReviewReport report = agent.synthesizeFinalReport(results, null, null);
+
+        assertEquals(0, report.totalIssuesFound());
+        assertTrue(report.lineComments().isEmpty());
+        assertEquals(2, report.globalComments().size());
+        assertTrue(report.globalComments().stream().allMatch(c -> c.content().startsWith("✅ [GOOD]")));
+        assertTrue(report.globalComments().stream().noneMatch(c -> c.content().contains("[MAJOR]")));
+        verify(bitbucketService, never()).postLineComment(anyString(), anyString(), anyString(), anyString(), anyInt(), anyString());
+    }
+
+    @Test
+    void testSynthesizeFinalReport_ReclassifiesAdditionalPraiseOutcomesAndStripsConflictingLabels() {
+        BitbucketService bitbucketService = mock(BitbucketService.class);
+        CoworkLogger logger = mock(CoworkLogger.class);
+        BitbucketPrReviewAgent agent = new BitbucketPrReviewAgent(bitbucketService, null, null, null, logger);
+
+        BitbucketPrReviewAgent.ReadyContext readyContext = new BitbucketPrReviewAgent.ReadyContext(
+                new BitbucketPrReviewAgent.PrReviewRequest("autocrypt/repo", 1L, null, null, "style-url", "arch-url"),
+                List.of(new BitbucketPrReviewAgent.ConcatenatedDiff(List.of(
+                        "test_sync_event_scheduler.cpp",
+                        "test_initial_cycle.cpp"), "diff", false)),
+                null,
+                null,
+                STYLE_GUIDE,
+                ARCH_GUIDE,
+                DEFAULT_PR_METADATA
+        );
+
+        BitbucketPrReviewAgent.AllAnalysisResults results = new BitbucketPrReviewAgent.AllAnalysisResults(
+                readyContext,
+                List.of(new BitbucketPrReviewAgent.StyleAnalysisResult(List.of(
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "test_sync_event_scheduler.cpp",
+                                3,
+                                "🟠 [MAJOR] 사용되지 않는 <deque> 헤더 파일이 제거되어 코드의 불필요한 의존성을 줄이고 빌드 시간을 최적화했습니다. 좋은 정리입니다.",
+                                "LINE",
+                                "SHOULD_FIX",
+                                "STYLE")
+                ), 96)),
+                List.of(new BitbucketPrReviewAgent.ArchAnalysisResult(List.of(
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "test_initial_cycle.cpp",
+                                44,
+                                "ℹ️ [INFO] [MAJOR] GivenEnrolled_WhenAuthResponseHasDelay_ThenCertDownloadDelayed 테스트의 로직을 개선하여 지연된 이벤트 처리의 타이밍을 보다 정확하게 검증합니다. 이는 SCMS 상태 머신의 스케줄러 동작에 대한 테스트 충실도를 높여, 제품의 안정성에 대한 신뢰를 강화합니다.",
+                                "LINE",
+                                "SUGGESTION",
+                                "ARCH"),
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "test_initial_cycle.cpp",
+                                55,
+                                "ℹ️ [INFO] [INFO] handleResponse 헬퍼 함수를 도입하여 startServiceAndHandleResponses의 복잡도를 줄이고 테스트 로직의 가독성 및 재사용성을 향상시켰습니다.",
+                                "LINE",
+                                "SUGGESTION",
+                                "ARCH")
+                ), 92))
+        );
+
+        BitbucketPrReviewAgent.FinalReviewReport report = agent.synthesizeFinalReport(results, null, null);
+
+        assertEquals(0, report.totalIssuesFound());
+        assertTrue(report.lineComments().isEmpty());
+        assertEquals(2, report.globalComments().size());
+        assertTrue(report.globalComments().stream().allMatch(c -> c.content().startsWith("✅ [GOOD]")));
+        assertTrue(report.globalComments().stream().noneMatch(c -> c.content().contains("[MAJOR]")));
+        assertTrue(report.globalComments().stream().noneMatch(c -> c.content().contains("[INFO]")));
+        verify(bitbucketService, never()).postLineComment(anyString(), anyString(), anyString(), anyString(), anyInt(), anyString());
+    }
+
+    @Test
+    void testSynthesizeFinalReport_DeduplicatesSameContentAcrossLocations() {
+        BitbucketService bitbucketService = mock(BitbucketService.class);
+        CoworkLogger logger = mock(CoworkLogger.class);
+        BitbucketPrReviewAgent agent = new BitbucketPrReviewAgent(bitbucketService, null, null, null, logger);
+
+        BitbucketPrReviewAgent.ReadyContext readyContext = new BitbucketPrReviewAgent.ReadyContext(
+                new BitbucketPrReviewAgent.PrReviewRequest("autocrypt/repo", 1L, null, null, "style-url", "arch-url"),
+                List.of(new BitbucketPrReviewAgent.ConcatenatedDiff(List.of("src/main/cpp/Lock.cpp"), "diff", false)),
+                null,
+                null,
+                STYLE_GUIDE,
+                ARCH_GUIDE,
+                DEFAULT_PR_METADATA
+        );
+        String duplicateContent = "🟠 [MAJOR] lock_guard 적용 범위가 넓어 임계 구역이 불필요하게 커질 수 있습니다.";
+
+        BitbucketPrReviewAgent.AllAnalysisResults results = new BitbucketPrReviewAgent.AllAnalysisResults(
+                readyContext,
+                List.of(new BitbucketPrReviewAgent.StyleAnalysisResult(List.of(), 95)),
+                List.of(new BitbucketPrReviewAgent.ArchAnalysisResult(List.of(
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "src/main/cpp/Lock.cpp",
+                                12,
+                                duplicateContent,
+                                "LINE",
+                                "SHOULD_FIX",
+                                "ARCH"),
+                        new BitbucketPrReviewAgent.CodeComment(
+                                "src/main/cpp/Lock.cpp",
+                                28,
+                                duplicateContent,
+                                "LINE",
+                                "SHOULD_FIX",
+                                "ARCH")
+                ), 88))
+        );
+
+        BitbucketPrReviewAgent.FinalReviewReport report = agent.synthesizeFinalReport(results, null, null);
+
+        assertEquals(1, report.totalIssuesFound());
+        assertEquals(1, report.lineComments().size());
+        assertEquals(12, report.lineComments().get(0).lineNumber());
+        verify(bitbucketService).postLineComment("autocrypt", "repo", "1", "src/main/cpp/Lock.cpp", 12, duplicateContent);
+        verify(bitbucketService, never()).postLineComment("autocrypt", "repo", "1", "src/main/cpp/Lock.cpp", 28, duplicateContent);
     }
 }
